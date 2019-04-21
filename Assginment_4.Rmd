@@ -19,6 +19,56 @@ eval_data_url <- "https://raw.githubusercontent.com/jjohn81/DATA621_Assignment4/
 train_data <- read.csv(train_data_url)
 eval_data <- as.data.frame((eval_data_url))
 
+train_data$INCOME <- as.numeric(train_data$INCOME)
+train_data$HOME_VAL <- as.numeric(train_data$HOME_VAL)
+train_data$OLDCLAIM <- as.numeric(train_data$OLDCLAIM)
+
+train_data$BLUEBOOK <- as.numeric(train_data$BLUEBOOK)
+
 ```
 
+  
+#### DATA EXPLORATION
+
+
+```{r Import, include = F  }
+
+
+set.seed(101) # Set Seed so that same sample can be reproduced in future also
+# Now Selecting 75% of data as sample from total 'n' rows of the data 
+##https://stackoverflow.com/questions/17200114/how-to-split-data-into-training-testing-sets-using-sample-function
+sample <- sample.int(n = nrow(train_data), size = floor(.75*nrow(train_data)), replace = F)
+train <- train_data[sample, ]
+test  <- train_data[-sample, ]
+
+t
+```
+
+```{r echo=F}
+#full.model <- glm(TARGET_FLAG ~ .-INDEX, family=binomial, test)
+#car::vif(full.model)
+#summary(full.model)
+
+test<- na.omit(test)
+full.model <- lm(test$TARGET_AMT ~ .-INDEX, test, na.action = na.exclude)
+car::vif(full.model)
+
+summary(full.model)
+
+
+step(full.model)
+
+ require(leaps)
+ b <- regsubsets(test$TARGET_AMT ~.,data = test, nvmax = 20)
+rs <- summary(b)
+rs$which
+ AIC <- 1787*log(rs$rss/1787) + (1:20)*2
+ plot(AIC ~ I(1:20), ylab="AIC", xlab="Number of Predictors")
+
+```
+
+```{r echo= F}
+corrplot(cor(train_data))
+full.model <- glm(train_data$target ~ ., family=binomial, train_data)
+```
 
