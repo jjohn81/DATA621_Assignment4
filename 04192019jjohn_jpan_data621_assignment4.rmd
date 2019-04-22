@@ -2,7 +2,9 @@
 title: "DATA 621 Assignment 4"
 author: "Joby John,Jun Pan"
 date: "April 18, 2019"
-output: html_document
+output:
+  word_document: default
+  html_document: default
 ---
 
 
@@ -50,31 +52,12 @@ train <- read.csv("https://raw.githubusercontent.com/jjohn81/DATA621_Assignment4
 ```
 
 
-check the dimension of the dataset
-```{r}
-dim(train)
-```
+Dataset contains `nrow(train)` rows and `ncol(train)` variables. There are 6 missing data in Age, 454 missing data of YOK, 445 missing data of income, 464 missing data of home value. We will use mean of the colums to fill in any missing values. We will also tranform money and 
 
 Summarize dataset into median, quantile, min, max
 ```{r}
 summary(train)
 ```
-
-Check the structure of dataset
-```{r}
-str(train)
-```
-
-visualize missing data
-```{r}
-vis_miss(train)
-```
-
-Detailed missing data information
-```{r}
-sapply(train, function(x) sum(is.na(x))) %>% kable() %>% kable_styling()
-```
-So there are 6 missing data in Age, 454 missing data of YOK, 445 missing data of income, 464 missing data of home value.  
 
 
 Data transformation
@@ -123,69 +106,55 @@ Describe how you have transformed the data by changing the original variables or
 a. Fix missing values (maybe with a Mean or Median value) b. Create flags to suggest if a variable was missing c. Transform data by putting it into buckets d. Mathematical transforms such as log or square root (or use Box-Cox) e. Combine variables (such as ratios or adding or multiplying) to create new variables 
 
 
-Impute missing data with column means
+Impute missing data with column median for for income and home value  and  column mean for other columns
 ```{r}
 train$AGE[is.na(train$AGE)] <- mean(train$AGE, na.rm=TRUE)
 train$YOJ[is.na(train$YOJ)] <- mean(train$YOJ, na.rm=TRUE)
-train$HOME_VAL[is.na(train$HOME_VAL)] <- mean(train$HOME_VAL, na.rm=TRUE)
+train$HOME_VAL[is.na(train$HOME_VAL)] <- median(train$HOME_VAL, na.rm=TRUE)
 train$CAR_AGE[is.na(train$CAR_AGE)] <- mean(train$CAR_AGE, na.rm=TRUE)
-train$INCOME[is.na(train$INCOME)] <- mean(train$INCOME, na.rm=TRUE)
+train$INCOME[is.na(train$INCOME)] <- median(train$INCOME, na.rm=TRUE)
 train <- train[complete.cases(train),]
-```
-
-```{r}
-vis_miss(train)
-```
-So far, missing data have been fixed.
-
-Save the completed data to train_clean
-```{r}
 train_clean <- train
-```
-
-
-Remove INDEX columns
-```{r}
 train_clean$INDEX <- NULL
-```
 
+```
 
 
 
 ```{r}
 #Convert indicator variables to 0s and 1s; 1 = Yes, Male for Sex, Commercial for Car Use, Red for RED_CAR, and Highly Urban for URBANICITY
-train_clean$PARENT1 <- ifelse(train_clean$PARENT1=="Yes", 1, 0)
-train_clean$MSTATUS <- ifelse(train_clean$MSTATUS=="Yes", 1, 0)
-train_clean$SEX <- ifelse(train_clean$SEX=="M", 1, 0)
-train_clean$CAR_USE <- ifelse(train_clean$CAR_USE=="Commercial", 1, 0)
-train_clean$RED_CAR <- ifelse(train_clean$RED_CAR=="Yes", 1, 0)
-train_clean$REVOKED <- ifelse(train_clean$REVOKED=="Yes", 1, 0)
-train_clean$URBANICITY <- ifelse(train_clean$URBANICITY == "Highly Urban/ Urban", 1, 0)
+#train_clean$PARENT1 <- ifelse(train_clean$PARENT1=="Yes", 1, 0)
+#train_clean$MSTATUS <- ifelse(train_clean$MSTATUS=="Yes", 1, 0)
+#train_clean$SEX <- ifelse(train_clean$SEX=="M", 1, 0)
+#train_clean$CAR_USE <- ifelse(train_clean$CAR_USE=="Commercial", 1, 0)
+#train_clean$RED_CAR <- ifelse(train_clean$RED_CAR=="Yes", 1, 0)
+#train_clean$REVOKED <- ifelse(train_clean$REVOKED=="Yes", 1, 0)
+#train_clean$URBANICITY <- ifelse(train_clean$URBANICITY == "Highly Urban/ Urban", 1, 0)
 
 #Convert categorical predictor values to indicator variables - EDUCATION, CAR_TYPE, JOB
 
 #EDUCATION, High school graduate is base case
-train_clean$HSDropout <- ifelse(train_clean$EDUCATION=="<High School", 1, 0)
-train_clean$Bachelors <- ifelse(train_clean$EDUCATION=="Bachelors", 1, 0)
-train_clean$Masters <- ifelse(train_clean$EDUCATION=="Masters", 1, 0)
-train_clean$PhD <- ifelse(train_clean$EDUCATION=="PhD", 1, 0)
+#train_clean$HSDropout <- ifelse(train_clean$EDUCATION=="<High School", 1, 0)
+#train_clean$Bachelors <- ifelse(train_clean$EDUCATION=="Bachelors", 1, 0)
+#train_clean$Masters <- ifelse(train_clean$EDUCATION=="Masters", 1, 0)
+#train_clean$PhD <- ifelse(train_clean$EDUCATION=="PhD", 1, 0)
 
 #CAR_TYPE, base case is minivan
-train_clean$Panel_Truck <- ifelse(train_clean$CAR_TYPE=="Panel Truck", 1, 0)
-train_clean$Pickup <- ifelse(train_clean$CAR_TYPE=="Pickup", 1, 0)
-train_clean$Sports_Car <- ifelse(train_clean$CAR_TYPE=="Sports Car", 1, 0)
-train_clean$Van <- ifelse(train_clean$CAR_TYPE=="Van", 1, 0)
-train_clean$SUV <- ifelse(train_clean$CAR_TYPE=="z_SUV", 1, 0)
+#train_clean$Panel_Truck <- ifelse(train_clean$CAR_TYPE=="Panel Truck", 1, 0)
+#train_clean$Pickup <- ifelse(train_clean$CAR_TYPE=="Pickup", 1, 0)
+#train_clean$Sports_Car <- ifelse(train_clean$CAR_TYPE=="Sports Car", 1, 0)
+#train_clean$Van <- ifelse(train_clean$CAR_TYPE=="Van", 1, 0)
+#train_clean$SUV <- ifelse(train_clean$CAR_TYPE=="z_SUV", 1, 0)
 
 #JOB, base case is ""
-train_clean$Professional <- ifelse(train_clean$JOB == "Professional", 1, 0)
-train_clean$Blue_Collar <- ifelse(train_clean$JOB == "Professional", 1, 0)
-train_clean$Clerical <- ifelse(train_clean$JOB == "Clerical", 1, 0)
-train_clean$Doctor <- ifelse(train_clean$JOB == "Doctor", 1, 0)
-train_clean$Lawyer <- ifelse(train_clean$JOB == "Lawyer", 1, 0)
-train_clean$Manager <- ifelse(train_clean$JOB == "Manager", 1, 0)
-train_clean$Home_Maker <- ifelse(train_clean$JOB == "Home Maker", 1, 0)
-train_clean$Student <- ifelse(train_clean$JOB == "Student", 1, 0)
+#train_clean$Professional <- ifelse(train_clean$JOB == "Professional", 1, 0)
+#train_clean$Blue_Collar <- ifelse(train_clean$JOB == "Professional", 1, 0)
+#train_clean$Clerical <- ifelse(train_clean$JOB == "Clerical", 1, 0)
+#train_clean$Doctor <- ifelse(train_clean$JOB == "Doctor", 1, 0)
+#train_clean$Lawyer <- ifelse(train_clean$JOB == "Lawyer", 1, 0)
+#train_clean$Manager <- ifelse(train_clean$JOB == "Manager", 1, 0)
+#train_clean$Home_Maker <- ifelse(train_clean$JOB == "Home Maker", 1, 0)
+#train_clean$Student <- ifelse(train_clean$JOB == "Student", 1, 0)
 
 ```
 
@@ -209,18 +178,18 @@ ntrain<-select_if(train_clean, is.numeric)
 
 Density plot of variables 
 ```{r}
-ntrain <- as.data.frame((ntrain))
+#ntrain <- as.data.frame((ntrain))
 
-par(mfrow=c(3, 3))
-colnames <- dimnames(ntrain)[[2]]
+#par(mfrow=c(3, 3))
+#colnames <- dimnames(ntrain)[[2]]
 
-  for(col in 2:ncol(train)) {
+ # for(col in 2:ncol(train)) {
 
-    d <- density(na.omit(ntrain[,col]))
+  #  d <- density(na.omit(ntrain[,col]))
    #d <- qqnorm(na.omit(train[,col]))
-    plot(d, type="n", main=colnames[col])
-    polygon(d, col="blue", border="gray")
-  }
+   # plot(d, type="n", main=colnames[col])
+  #  polygon(d, col="blue", border="gray")
+  #}
 
 
 ```
