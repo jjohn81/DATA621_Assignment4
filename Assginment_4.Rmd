@@ -41,7 +41,7 @@ sample <- sample.int(n = nrow(train_data), size = floor(.75*nrow(train_data)), r
 train <- train_data[sample, ]
 test  <- train_data[-sample, ]
 
-t
+
 ```
 
 ```{r echo=F}
@@ -70,5 +70,11 @@ rs$which
 ```{r echo= F}
 corrplot(cor(train_data))
 full.model <- glm(train_data$target ~ ., family=binomial, train_data)
+```
+
+```{r}
+full.model <- glm(test$TARGET_FLAG ~ .-INDEX-target, test, na.action = na.exclude, family = binomial(link = "logit"))
+step(full.model)
+
 ```
 
