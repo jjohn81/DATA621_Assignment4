@@ -234,10 +234,12 @@ summary(full.model.glm)
 
 #First model, we call it original_full_model, to seek the correlation between TARGET_FLAG wiht original viarables but not including the derived variables
 ```{r }
-full.model.step <- step(full.model)
-full.model.glm.step <- step( full.model.glm)
+full.model.step <- step(full.model, trace = 0, keep = NULL)
+full.model.glm.step <- step( full.model.glm,trace = 0, keep = NULL)
+
   
 summary(full.model.step) 
+full.model.step$anov
 summary(full.model.glm.step) 
 ```
 #transform_model: including the transformed variables 
@@ -255,9 +257,14 @@ b <- regsubsets(TARGET_AMT ~.-TARGET_FLAG,data = t )
 rs <- summary(b)
 rs$which
 
- b <- regsubsets(TARGET_AMT ~.,data = train_flag)
+ b <- regsubsets(TARGET_FLAG ~.,data = train_flag)
 rs <- summary(b)
 rs$which
+
+```
+```{r}
+AIC <- 50*log(rs$rss/50) + (2:8)*2
+ plot(AIC ~ I(1:8), ylab="AIC", xlab="Number of Predictors")
 ```
 
 
