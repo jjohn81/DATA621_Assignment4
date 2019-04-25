@@ -8,19 +8,6 @@ output:
 ---
 
 
-Your objective is to build multiple linear regression and binary logistic regression models on the training data to predict the probability that a person will crash their car and also the amount of money it will cost if the person does crash their car. 
-
-Overview In this homework assignment, you will explore, analyze and model a data set containing approximately 8000 records representing a customer at an auto insurance company. Each record has two response variables. The first response variable, TARGET_FLAG, is a 1 or a 0. A "1" means that the person was in a car crash. A zero means that the person was not in a car crash. The second response variable is TARGET_AMT. This value is zero if the person did not crash their car. But if they did crash their car, this number will be a value greater than zero. Your objective is to build multiple linear regression and binary logistic regression models on the training data to predict the probability that a person will crash their car and also the amount of money it will cost if the person does crash their car. You can only use the variables given to you (or variables that you derive from the variables provided). Below is a short description of the variables of interest in the data set:
-
-
-1. DATA EXPLORATION (25 Points) 
- 
-Describe the size and the variables in the insurance training data set. Consider that too much detail will cause a manager to lose interest while too little detail will make the manager consider that you aren't doing your job. Some suggestions are given below. Please do NOT treat this as a check list of things to do to complete the assignment. You should have your own thoughts on what to tell the boss. These are just ideas. a. Mean / Standard Deviation / Median b. Bar Chart or Box Plot of the data c. Is the data correlated to the target variable (or to other variables?) d. Are any of the variables missing and need to be imputed "fixed"? 
-
-
-
-
-
 ```{r, echo=FALSE, warning=FALSE, message=FALSE}
 library(car)
 library(caTools)
@@ -45,14 +32,20 @@ library(PerformanceAnalytics)
 library(ROCR)
 library(testthat)
 library(UpSetR)
+require(leaps)
 ```
 
 ```{r}
 train <- read.csv("https://raw.githubusercontent.com/jjohn81/DATA621_Assignment4/master/insurance_training.csv")
+test <- read.csv("https://raw.githubusercontent.com/jjohn81/DATA621_Assignment4/master/insurance-evaluation.csv")
 ```
 
+In this, we will explore, analyze and model a data set containing approximately 8000 records representing a customer at an auto insurance company. Each record has two response variables. The first response variable, TARGET_FLAG, is a 1 or a 0. A "1" means that the person was in a car crash. A zero means that the person was not in a car crash. The second response variable is TARGET_AMT. This value is zero if the person did not crash their car. But if they did crash their car, this number will be a value greater than zero. We will build multiple linear regression and binary logistic regression models on the training data to predict the probability that a person will crash their car and also the amount of money it will cost if the person does crash their car.  
 
-Dataset contains `nrow(train)` rows and `ncol(train)` variables. There are 6 missing data in Age, 454 missing data of YOK, 445 missing data of income, 464 missing data of home value. We will use mean of the colums to fill in any missing values. We will also tranform money and 
+#### 1. DATA EXPLORATION (25 Points) 
+ 
+  
+Dataset contains `nrow(train)` rows and `ncol(train)` variables. There are 6 missing data in Age, 454 missing data of YOK, 445 missing data of income, 464 missing data of home value. We will use mean of the colums to fill in any missing values. We will also tranform money and other fields formatted numerical fields. 
 
 Summarize dataset into median, quantile, min, max
 ```{r}
@@ -86,27 +79,15 @@ train = as.tbl(train) %>%
 ```
 
 
-
-
-
-
-
-
-
-
-
-
-`
-
-
-2. DATA PREPARATION (25 Points) 
+#### 2. DATA PREPARATION
  
 Describe how you have transformed the data by changing the original variables or creating new variables. If you did transform the data or create new variables, discuss why you did this. Here are some possible transformations. 
  
 a. Fix missing values (maybe with a Mean or Median value) b. Create flags to suggest if a variable was missing c. Transform data by putting it into buckets d. Mathematical transforms such as log or square root (or use Box-Cox) e. Combine variables (such as ratios or adding or multiplying) to create new variables 
 
 
-Impute missing data with column median for for income and home value  and  column mean for other columns
+Impute missing data with column median for for income and home value  and  column mean for other columns. Convert indicator variables to 0s and 1s; 1 = Yes, Male for Sex, Commercial for Car Use, Red for RED_CAR, and Highly Urban for URBANICITY
+Convert categorical predictor values to indicator variables - EDUCATION, CAR_TYPE, JOB.Transform non normal variables like incone and house values using bobcox tranformation. 
 ```{r}
 train$AGE[is.na(train$AGE)] <- mean(train$AGE, na.rm=TRUE)
 train$YOJ[is.na(train$YOJ)] <- mean(train$YOJ, na.rm=TRUE)
@@ -137,23 +118,23 @@ summary(x1)
 #train_clean$RED_CAR <- ifelse(train_clean$RED_CAR=="Yes", 1, 0)
 #train_clean$REVOKED <- ifelse(train_clean$REVOKED=="Yes", 1, 0)
 #train_clean$URBANICITY <- ifelse(train_clean$URBANICITY == "Highly Urban/ Urban", 1, 0)
-
-#Convert categorical predictor values to indicator variables - EDUCATION, CAR_TYPE, JOB
-
-#EDUCATION, High school graduate is base case
+#
+##Convert categorical predictor values to indicator variables - EDUCATION, CAR_TYPE, JOB
+#
+##EDUCATION, High school graduate is base case
 #train_clean$HSDropout <- ifelse(train_clean$EDUCATION=="<High School", 1, 0)
 #train_clean$Bachelors <- ifelse(train_clean$EDUCATION=="Bachelors", 1, 0)
 #train_clean$Masters <- ifelse(train_clean$EDUCATION=="Masters", 1, 0)
 #train_clean$PhD <- ifelse(train_clean$EDUCATION=="PhD", 1, 0)
-
-#CAR_TYPE, base case is minivan
+#
+##CAR_TYPE, base case is minivan
 #train_clean$Panel_Truck <- ifelse(train_clean$CAR_TYPE=="Panel Truck", 1, 0)
 #train_clean$Pickup <- ifelse(train_clean$CAR_TYPE=="Pickup", 1, 0)
 #train_clean$Sports_Car <- ifelse(train_clean$CAR_TYPE=="Sports Car", 1, 0)
 #train_clean$Van <- ifelse(train_clean$CAR_TYPE=="Van", 1, 0)
 #train_clean$SUV <- ifelse(train_clean$CAR_TYPE=="z_SUV", 1, 0)
-
-#JOB, base case is ""
+#
+##JOB, base case is ""
 #train_clean$Professional <- ifelse(train_clean$JOB == "Professional", 1, 0)
 #train_clean$Blue_Collar <- ifelse(train_clean$JOB == "Professional", 1, 0)
 #train_clean$Clerical <- ifelse(train_clean$JOB == "Clerical", 1, 0)
@@ -173,11 +154,7 @@ train_clean$HOME_VAL <- as.numeric(train_clean$HOME_VAL)
 train_clean$BLUEBOOK <- as.numeric(train_clean$BLUEBOOK)
 train_clean$OLDCLAIM <- as.numeric(train_clean$OLDCLAIM)
 ```
-
-```{r}
-str(train_clean)
-```
-Select numberical variable togeter
+ 
 ```{r}
 ntrain<-select_if(train_clean, is.numeric)
 ```
@@ -187,17 +164,17 @@ Density plot of variables
 ```{r}
 #ntrain <- as.data.frame((ntrain))
 
-#par(mfrow=c(3, 3))
+ par(mfrow=c(3, 3))
 #colnames <- dimnames(ntrain)[[2]]
 
  # for(col in 2:ncol(train)) {
 
-  #  d <- density(na.omit(ntrain[,col]))
-   #d <- qqnorm(na.omit(train[,col]))
-   # plot(d, type="n", main=colnames[col])
-  #  polygon(d, col="blue", border="gray")
+    #d <- density(na.omit(ntrain[,col]))
+  # d <- qqnorm(na.omit(train[,col]))
+  #  plot(d, type="n", main=colnames[col])
+   # polygon(d, col="blue", border="gray")
   #}
-
+  
 
 ```
 From the density plot, we can find INCOME, HOME_VAL, BLUEBOOK and OLDCLAIM are left skewed.
@@ -205,45 +182,22 @@ We are going to do transformation.
 
 ```{r}
 boxcoxfit(train_clean$INCOME[train_clean$INCOME >0])
-```
-
-```{r}
+ 
 train_clean$INCOME_MOD <- train_clean$INCOME ^0.443
-```
-
-```{r}
+ 
 boxcoxfit(train_clean$HOME_VAL[train_clean$HOME_VAL > 0])
-```
-
-```{r}
+ 
 train_clean$HOME_VAL_MOD <- train_clean$HOME_VAL^0.102
-```
-
-```{r}
+ 
 boxcoxfit(train_clean$BLUEBOOK)
-```
-
-```{r}
+ 
 train_clean$BLUEBOOK_MOD <- train_clean$BLUEBOOK^0.461
-```
-
-```{r}
+ 
 boxcoxfit(train_clean$OLDCLAIM[train_clean$OLDCLAIM>0])
-```
-
-```{r}
+ 
 train_clean$OLD_CLAIM_MOD <- log(train_clean$OLDCLAIM + 1)   
+ 
 ```
-
-
-```{r}
-str(train_clean)
-```
-
-
-
-
-
 
 ```{r}
 pairs(~MVR_PTS+CLM_FREQ+URBANICITY+HOME_VAL+PARENT1+CAR_USE+OLDCLAIM, data=train_clean, main="Predictors with High Correlattions to Targets", col="slategrey")
@@ -262,45 +216,71 @@ Discuss the coefficients in the models, do they make sense? For example, if a pe
 ```{r}
 head(train_clean)
 ```
-### Model for amount
+
+
+#### Models for Accidents
+
+#####First model, we call it original_full_model, to seek the correlation between TARGET_FLAG wiht original viarables.
 ```{r}
 
-test<- na.omit(test)
-full.model <- lm(test$TARGET_AMT ~ .-INDEX, test, na.action = na.exclude)
-#car::vif(full.model)
+train_flag <- train[,-c(1)] 
+full.model.glm <- glm(TARGET_FLAG ~. , data = train_flag, family = binomial(link='logit'))
+summary(full.model.glm)
+```
 
+#####Transform_model: including the transformed variables 
+```{r}
+#train_flag <- train_clean[,-c(1)] 
+transform_model.glm <- glm(TARGET_FLAG ~., data = train_clean, family = binomial(link='logit'))
+summary(transform_model.glm)
+```
+
+#####Step Model
+```{r}
+transform_model_step.glm <- step( transform_model.glm,trace = 0, keep = NULL)
+summary(transform_model_step.glm) 
+```
+
+
+
+#### Models for Amount
+ 
+#####Full Model 
+First model includes all variables excluding index, this model has Adjusted R-squared of  0.2886. A model with out target falg has low Adjusted R-squared of   0.06665.    Model with TARGET_FLAG  has fewer statistically significatint predictor. 
+```{r}
+
+full.model <- lm(TARGET_AMT ~ .  , train, na.action = na.exclude)
 summary(full.model)
 
+train1 <- train[ which(train$TARGET_FLAG==1),] 
+train1 <- train1[,-c(1,2)] 
 
-step.models <- step(full.model)
+full.model.onlyFlag <- lm(TARGET_AMT ~ .  ,data= train1, na.action = na.exclude)
+summary(full.model.onlyFlag)
 
- require(leaps)
- b <- regsubsets(test$TARGET_AMT ~.,data = test)
-rs <- summary(b)
-rs$which
+
 ```
 
-
-#First model, we call it original_full_model, to seek the correlation between TARGET_FLAG wiht original viarables but not including the derived variables
+#####Step 
 ```{r}
-train_flag <- train_clean[,-c(2)] 
-original_full_model <- glm(TARGET_FLAG ~.-INCOME_MOD-HOME_VAL_MOD-BLUEBOOK_MOD-OLD_CLAIM_MOD, data = train_flag, family = binomial(link='logit'))
-summary(original_full_model)
+full.model.step <- step(full.model, trace = 0, keep = NULL)
+summary(full.model.step) 
+full.model.step$anov
 ```
-#transform_model: including the transformed variables 
+
+#####Cross Validation
+ 
 ```{r}
-train_flag <- train_clean[,-c(2)] 
-transform_model <- glm(TARGET_FLAG ~., data = train_flag, family = binomial(link='logit'))
-summary(transform_model)
+set.seed(123) 
+train.control <- trainControl(method = "cv", number = 10)
+# Train the model
+model <- train(TARGET_AMT ~., data = train, method = "lm",
+               trControl = train.control)
+print(model)
+summary(model) 
 ```
 
 
-#reduced_model: only keep the variables with p <0.05
-```{r}
-train_flag <- train_clean[,-c(2)] 
-reduced_model <- glm(TARGET_FLAG ~.-AGE-HOMEKIDS-YOJ-INCOME-PARENT1-HOME_VAL-MSTATUS-SEX-RED_CAR-CLM_FREQ-CAR_AGE-HSDropout-Professional-Blue_Collar-Clerical-Lawyer-Home_Maker-HOME_VAL_MOD-Student-Doctor-CAR_USE-REVOKED-URBANICITY-Bachelors-Masters-PhD-Panel_Truck-Pickup-Sports_Car-Van-SUV-Manager, data = train_flag, family = binomial(link='logit'))
-summary(reduced_model)
-```
 
  
  
@@ -311,9 +291,9 @@ Decide on the criteria for selecting the best multiple linear regression model a
  
 For the multiple linear regression model, will you use a metric such as Adjusted R2, RMSE, etc.? Be sure to explain how you can make inferences from the model, discuss multi-collinearity issues (if any), and discuss other relevant model output. Using the training data set, evaluate the multiple linear regression model based on (a) mean squared error, (b) R2, (c) F-statistic, and (d) residual plots. For the binary logistic regression model, will you use a metric such as log likelihood, AIC, ROC curve, etc.? Using the training data set, evaluate the binary logistic regression model based on (a) accuracy, (b) classification error rate, (c) precision, (d) sensitivity, (e) specificity, (f) F1 score, (g) AUC, and (h) confusion matrix. Make predictions using the evaluation data set. 
 ```{r}
-train_flag$predict <- predict(reduced_model, train_flag, type='response')
+train_flag$predict_full_glm <- predict(full.model.glm, train_flag, type='response')
 
-roc_reduced_model <- roc(train_flag$TARGET_FLAG, train_flag$predict, plot=T, asp=NA,
+roc_reduced_model <- roc(train_flag$TARGET_FLAG, train_flag$predict_full_glm, plot=T, asp=NA,
                 legacy.axes=T, main = "ROC Curve Reduced Model", col="red")
 ```
 
@@ -398,6 +378,7 @@ return((2*Precision*Sensitivity)/(Precision+Sensitivity))
 }
 F1_score(data)
 ```
+
 
 
 #Test the reduced model on evaluation data
@@ -523,7 +504,6 @@ y_pred_num <- ifelse(TARGET_FLAG > 0.5, 1, 0)
 y_pred <- factor(y_pred_num, levels=c(0, 1))
 summary(y_pred)
 ```
-
 
 
 
