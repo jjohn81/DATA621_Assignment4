@@ -250,16 +250,16 @@ t<- na.omit(train_clean)
 #summary(full.model)
 
 train_flag <- train_clean[,-c(2)] 
-#full.model.glm <- glm(TARGET_FLAG ~. , data = train_flag, family = binomial(link='logit'))
+#full.model.glm <- glm(TARGET_FLAG ~. , data = train_flag, family = binomial(lcofnk='logit'))
 #summary(full.model.glm)
 
-b <- regsubsets(TARGET_AMT ~.-TARGET_FLAG,data = t )
+b <- regsubsets(TARGET_AMT ~.-TARGET_FLAG,data = t ,nvmax = 27)
 rs <- summary(b)
 rs$which
 
- b <- regsubsets(TARGET_FLAG ~.,data = train_flag)
-rs <- summary(b)
-rs$which
+# b <- regsubsets(TARGET_FLAG ~.,data = train_flag)
+#rs <- summary(b)
+#rs$which
 
 ```
 ```{r}
