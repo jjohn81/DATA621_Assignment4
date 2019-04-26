@@ -1,0 +1,601 @@
+---
+title: "DATA 621 Assignment 4"
+author: "Joby John,Jun Pan"
+date: "April 18, 2019"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+
+Your objective is to build multiple linear regression and binary logistic regression models on the training data to predict the probability that a person will crash their car and also the amount of money it will cost if the person does crash their car. 
+
+Overview In this homework assignment, you will explore, analyze and model a data set containing approximately 8000 records representing a customer at an auto insurance company. Each record has two response variables. The first response variable, TARGET_FLAG, is a 1 or a 0. A "1" means that the person was in a car crash. A zero means that the person was not in a car crash. The second response variable is TARGET_AMT. This value is zero if the person did not crash their car. But if they did crash their car, this number will be a value greater than zero. Your objective is to build multiple linear regression and binary logistic regression models on the training data to predict the probability that a person will crash their car and also the amount of money it will cost if the person does crash their car. You can only use the variables given to you (or variables that you derive from the variables provided). Below is a short description of the variables of interest in the data set:
+
+
+1. DATA EXPLORATION (25 Points) 
+ 
+Describe the size and the variables in the insurance training data set. Consider that too much detail will cause a manager to lose interest while too little detail will make the manager consider that you aren't doing your job. Some suggestions are given below. Please do NOT treat this as a check list of things to do to complete the assignment. You should have your own thoughts on what to tell the boss. These are just ideas. a. Mean / Standard Deviation / Median b. Bar Chart or Box Plot of the data c. Is the data correlated to the target variable (or to other variables?) d. Are any of the variables missing and need to be imputed "fixed"? 
+
+
+
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(car)
+library(caTools)
+library(caret)
+library(corrplot)
+library(data.table)
+library(dplyr)
+library(geoR)
+library(ggplot2)
+library(grid)
+library(gridExtra)
+library(kableExtra)
+library(knitr)
+library(MASS)
+library(naniar)
+library(nortest)
+library(pROC)
+library(pscl)
+library(psych)
+library(reshape)
+library(PerformanceAnalytics)
+library(ROCR)
+library(testthat)
+library(UpSetR)
+```
+
+```{r}
+train <- read.csv("https://raw.githubusercontent.com/jjohn81/DATA621_Assignment4/master/insurance_training.csv")
+```
+
+
+check the dimension of the dataset
+```{r}
+dim(train)
+```
+Databases were loaded from github repository:
+https://github.com/jjohn81/DATA621_Assignment4
+In train dataset, there were 8161 observers and 26 variables.
+In evaluation dataset, there were 2141 observers and 26 variables.
+
+
+
+
+
+
+
+
+Summarize dataset into median, quantile, min, max
+```{r}
+summary(train)
+```
+
+Check the structure of dataset
+```{r}
+str(train)
+```
+
+visualize missing data
+```{r}
+vis_miss(train)
+```
+
+Detailed missing data information
+```{r}
+sapply(train, function(x) sum(is.na(x))) %>% kable() %>% kable_styling()
+```
+So there are 6 missing data in Age, 454 missing data of YOK, 445 missing data of income, 464 missing data of home value.  
+
+
+Data transformation
+```{r}
+#remove "$"
+money = function(input) {
+  out = sub("\\$", "", input)
+  out = as.numeric(sub(",", "", out))
+  return(out)
+}
+
+# Remove " ", replace with "_"
+underscore = function(input) {
+  out = sub(" ", "_", input)
+  return(out)
+}
+
+train = as.tbl(train) %>% 
+  mutate_at(c("INCOME","HOME_VAL","BLUEBOOK","OLDCLAIM"),
+            money) %>% 
+  mutate_at(c("EDUCATION","JOB","CAR_TYPE","URBANICITY"),
+            underscore) %>% 
+  mutate_at(c("EDUCATION","JOB","CAR_TYPE","URBANICITY"),
+            as.factor) %>% 
+  mutate(TARGET_FLAG = as.factor(TARGET_FLAG))
+```
+1: remove $ sign from INCOME, HOME_VAL, BLUEBOOK, OLDCLAIM;
+2: replace " " with underscore "_" of variables : EDUCATION, JOB, CAR_TYPE, URBANICITY
+3: change it as factors for above variabls plus TARGET_FLA
+
+
+
+
+
+
+
+
+
+
+
+`
+
+
+2. DATA PREPARATION (25 Points) 
+ 
+Describe how you have transformed the data by changing the original variables or creating new variables. If you did transform the data or create new variables, discuss why you did this. Here are some possible transformations. 
+ 
+a. Fix missing values (maybe with a Mean or Median value) b. Create flags to suggest if a variable was missing c. Transform data by putting it into buckets d. Mathematical transforms such as log or square root (or use Box-Cox) e. Combine variables (such as ratios or adding or multiplying) to create new variables 
+
+
+Impute missing data with column means
+```{r}
+train$AGE[is.na(train$AGE)] <- mean(train$AGE, na.rm=TRUE)
+train$YOJ[is.na(train$YOJ)] <- mean(train$YOJ, na.rm=TRUE)
+train$HOME_VAL[is.na(train$HOME_VAL)] <- mean(train$HOME_VAL, na.rm=TRUE)
+train$CAR_AGE[is.na(train$CAR_AGE)] <- mean(train$CAR_AGE, na.rm=TRUE)
+train$INCOME[is.na(train$INCOME)] <- mean(train$INCOME, na.rm=TRUE)
+train <- train[complete.cases(train),]
+```
+
+```{r}
+vis_miss(train)
+```
+So far, missing data have been fixed.
+
+Save the completed data to train_clean
+```{r}
+train_clean <- train
+```
+
+
+Remove INDEX columns
+```{r}
+train_clean$INDEX <- NULL
+```
+
+
+
+
+```{r}
+#Convert indicator variables to 0s and 1s; 1 = Yes, Male for Sex, Commercial for Car Use, Red for RED_CAR, and Highly Urban for URBANICITY
+train_clean$PARENT1 <- ifelse(train_clean$PARENT1=="Yes", 1, 0)
+train_clean$MSTATUS <- ifelse(train_clean$MSTATUS=="Yes", 1, 0)
+train_clean$SEX <- ifelse(train_clean$SEX=="M", 1, 0)
+train_clean$CAR_USE <- ifelse(train_clean$CAR_USE=="Commercial", 1, 0)
+train_clean$RED_CAR <- ifelse(train_clean$RED_CAR=="Yes", 1, 0)
+train_clean$REVOKED <- ifelse(train_clean$REVOKED=="Yes", 1, 0)
+train_clean$URBANICITY <- ifelse(train_clean$URBANICITY == "Highly Urban/ Urban", 1, 0)
+
+#Convert categorical predictor values to indicator variables - EDUCATION, CAR_TYPE, JOB
+
+#EDUCATION, High school graduate is base case
+train_clean$HSDropout <- ifelse(train_clean$EDUCATION=="<High School", 1, 0)
+train_clean$Bachelors <- ifelse(train_clean$EDUCATION=="Bachelors", 1, 0)
+train_clean$Masters <- ifelse(train_clean$EDUCATION=="Masters", 1, 0)
+train_clean$PhD <- ifelse(train_clean$EDUCATION=="PhD", 1, 0)
+
+#CAR_TYPE, base case is minivan
+train_clean$Panel_Truck <- ifelse(train_clean$CAR_TYPE=="Panel Truck", 1, 0)
+train_clean$Pickup <- ifelse(train_clean$CAR_TYPE=="Pickup", 1, 0)
+train_clean$Sports_Car <- ifelse(train_clean$CAR_TYPE=="Sports Car", 1, 0)
+train_clean$Van <- ifelse(train_clean$CAR_TYPE=="Van", 1, 0)
+train_clean$SUV <- ifelse(train_clean$CAR_TYPE=="z_SUV", 1, 0)
+
+#JOB, base case is ""
+train_clean$Professional <- ifelse(train_clean$JOB == "Professional", 1, 0)
+train_clean$Blue_Collar <- ifelse(train_clean$JOB == "Professional", 1, 0)
+train_clean$Clerical <- ifelse(train_clean$JOB == "Clerical", 1, 0)
+train_clean$Doctor <- ifelse(train_clean$JOB == "Doctor", 1, 0)
+train_clean$Lawyer <- ifelse(train_clean$JOB == "Lawyer", 1, 0)
+train_clean$Manager <- ifelse(train_clean$JOB == "Manager", 1, 0)
+train_clean$Home_Maker <- ifelse(train_clean$JOB == "Home Maker", 1, 0)
+train_clean$Student <- ifelse(train_clean$JOB == "Student", 1, 0)
+
+```
+
+
+INCOME, HOME_VAL, BLUEBOOK, and OLDCLAIM are represented as strings. So we will be extracting the numeric values for these.
+```{r}
+train_clean$INCOME <- as.numeric(train_clean$INCOME)
+train_clean$HOME_VAL <- as.numeric(train_clean$HOME_VAL)
+train_clean$BLUEBOOK <- as.numeric(train_clean$BLUEBOOK)
+train_clean$OLDCLAIM <- as.numeric(train_clean$OLDCLAIM)
+```
+
+```{r}
+str(train_clean)
+```
+```{r}
+write.csv(train_clean, file="train_clean.csv")
+```
+
+```{r}
+getwd()
+```
+#After this step, we got train_clean.csv file, this file has been transformed to a dataset which is easy to be used for further analysis.  So I am going to saved for build a linear model to predict TARGET_AMT
+
+Select numberical variable togeter
+```{r}
+ntrain<-select_if(train_clean, is.numeric)
+```
+
+
+Density plot of variables 
+```{r}
+ntrain <- as.data.frame((ntrain))
+
+par(mfrow=c(3, 3))
+colnames <- dimnames(ntrain)[[2]]
+
+  for(col in 2:ncol(train)) {
+
+    d <- density(na.omit(ntrain[,col]))
+   #d <- qqnorm(na.omit(train[,col]))
+    plot(d, type="n", main=colnames[col])
+    polygon(d, col="blue", border="gray")
+  }
+
+
+```
+From the density plot, we can find INCOME, HOME_VAL, BLUEBOOK and OLDCLAIM are left skewed.
+We are going to do transformation.
+
+```{r}
+boxcoxfit(train_clean$INCOME[train_clean$INCOME >0])
+```
+
+```{r}
+train_clean$INCOME_MOD <- train_clean$INCOME ^0.443
+```
+
+```{r}
+boxcoxfit(train_clean$HOME_VAL[train_clean$HOME_VAL > 0])
+```
+
+```{r}
+train_clean$HOME_VAL_MOD <- train_clean$HOME_VAL^0.102
+```
+
+```{r}
+boxcoxfit(train_clean$BLUEBOOK)
+```
+
+```{r}
+train_clean$BLUEBOOK_MOD <- train_clean$BLUEBOOK^0.461
+```
+
+```{r}
+boxcoxfit(train_clean$OLDCLAIM[train_clean$OLDCLAIM>0])
+```
+
+```{r}
+train_clean$OLD_CLAIM_MOD <- log(train_clean$OLDCLAIM + 1)   
+```
+
+
+```{r}
+str(train_clean)
+```
+
+
+
+
+
+
+```{r}
+pairs(~MVR_PTS+CLM_FREQ+URBANICITY+HOME_VAL+PARENT1+CAR_USE+OLDCLAIM, data=train_clean, main="Predictors with High Correlattions to Targets", col="slategrey")
+```
+
+
+```{r}
+train_mod <- train_clean
+```
+
+```{r}
+write.csv(train_mod, file="train_mod.csv")
+```
+#Write down a train_mod file with modification of income, home value, old claim and bluebook value.
+
+
+
+
+3. BUILD MODELS (25 Points) 
+ 
+Using the training data set, build at least two different multiple linear regression models and three different binary logistic regression models, using different variables (or the same variables with different transformations). You may select the variables manually, use an approach such as Forward or Stepwise, use a different approach such as trees, or use a combination of techniques. Describe the techniques you used. If you manually selected a variable for inclusion into the model or exclusion into the model, indicate why this was done. 
+ 
+Discuss the coefficients in the models, do they make sense? For example, if a person has a lot of traffic tickets, you would reasonably expect that person to have more car crashes. If the coefficient is negative (suggesting that the person is a safer driver), then that needs to be discussed. Are you keeping the model even though it is counter intuitive? Why? The boss needs to know. 
+
+```{r}
+head(train_clean)
+```
+
+#First model, we call it original_full_model, to seek the correlation between TARGET_FLAG wiht original viarables but not including the derived variables
+```{r}
+train_flag <- train_clean[,-c(2)] 
+original_full_model <- glm(TARGET_FLAG ~.-INCOME_MOD-HOME_VAL_MOD-BLUEBOOK_MOD-OLD_CLAIM_MOD, data = train_flag, family = binomial(link='logit'))
+summary(original_full_model)
+```
+#transform_model: including the transformed variables 
+```{r}
+train_flag <- train_clean[,-c(2)] 
+transform_model <- glm(TARGET_FLAG ~., data = train_flag, family = binomial(link='logit'))
+summary(transform_model)
+```
+
+
+#reduced_model: only keep the variables with p <0.05
+```{r}
+train_flag <- train_clean[,-c(2)] 
+reduced_model <- glm(TARGET_FLAG ~.-AGE-HOMEKIDS-YOJ-INCOME-PARENT1-HOME_VAL-MSTATUS-SEX-RED_CAR-CLM_FREQ-CAR_AGE-HSDropout-Professional-Blue_Collar-Clerical-Lawyer-Home_Maker-HOME_VAL_MOD-Student-Doctor-CAR_USE-REVOKED-URBANICITY-Bachelors-Masters-PhD-Panel_Truck-Pickup-Sports_Car-Van-SUV-Manager, data = train_flag, family = binomial(link='logit'))
+summary(reduced_model)
+```
+
+ 
+ 
+ 
+ 4. SELECT MODELS (25 Points) 
+ 
+Decide on the criteria for selecting the best multiple linear regression model and the best binary logistic regression model. Will you select models with slightly worse performance if it makes more sense or is more parsimonious? Discuss why you selected your models.  
+ 
+For the multiple linear regression model, will you use a metric such as Adjusted R2, RMSE, etc.? Be sure to explain how you can make inferences from the model, discuss multi-collinearity issues (if any), and discuss other relevant model output. Using the training data set, evaluate the multiple linear regression model based on (a) mean squared error, (b) R2, (c) F-statistic, and (d) residual plots. For the binary logistic regression model, will you use a metric such as log likelihood, AIC, ROC curve, etc.? Using the training data set, evaluate the binary logistic regression model based on (a) accuracy, (b) classification error rate, (c) precision, (d) sensitivity, (e) specificity, (f) F1 score, (g) AUC, and (h) confusion matrix. Make predictions using the evaluation data set. 
+
+
+We would like to select Reduced Model for Binary Logistic Regression models. The AIC and residual deviance for this model seemed to give the best values that would be suited for the prediction. Below is the ROC curve for model5 and to me it looks good. So i would like to proceed with Reduced Model. 
+
+```{r}
+train_flag$predict <- predict(reduced_model, train_flag, type='response')
+
+roc_reduced_model <- roc(train_flag$TARGET_FLAG, train_flag$predict, plot=T, asp=NA,
+                legacy.axes=T, main = "ROC Curve Reduced Model", col="red")
+```
+
+```{r}
+roc_reduced_model["auc"]
+```
+Build confusion matrix
+```{r}
+train_flag$predict_target <- ifelse(train_flag$predict >=0.5, 1, 0)
+train_flag$predict_target <- as.integer(train_flag$predict_target)
+myvars <- c("TARGET_FLAG", "predict_target")
+train_flag_cm <- train_flag[myvars]
+cm <- table(train_flag_cm$predict_target,train_flag_cm$TARGET_FLAG)
+knitr:: kable(cm)
+```
+    
+    
+```{r}
+Accuracy <- function(data) {
+tb <- table(train_flag_cm$predict_target,train_flag_cm$TARGET_FLAG)
+TN=tb[1,1]
+TP=tb[2,2]
+FN=tb[2,1]
+FP=tb[1,2]
+return((TP+TN)/(TP+FP+TN+FN))
+}
+Accuracy(data)
+```
+
+
+
+
+
+```{r}
+CER <- function(data) {
+tb <- table(train_flag_cm$predict_target,train_flag_cm$TARGET_FLAG)
+TN=tb[1,1]
+TP=tb[2,2]
+FN=tb[2,1]
+FP=tb[1,2]
+return((FP+FN)/(TP+FP+TN+FN))
+}
+CER(data)
+```
+
+
+
+```{r}
+Precision <- function(data) {
+tb <- table(train_flag_cm$predict_target,train_flag_cm$TARGET_FLAG)
+TP=tb[2,2]
+FP=tb[1,2]
+return((TP)/(TP+FP))
+}
+Precision(data)
+```
+
+```{r}
+Sensitivity <- function(data) {
+tb <- table(train_flag_cm$predict_target,train_flag_cm$TARGET_FLAG)
+TP=tb[2,2]
+FN=tb[2,1]
+return((TP)/(TP+FN))
+}
+Sensitivity(data)
+```
+
+
+
+```{r}
+Specificity <- function(data) {
+tb <- table(train_flag_cm$predict_target,train_flag_cm$TARGET_FLAG)
+TN=tb[1,1]
+TP=tb[2,2]
+FN=tb[2,1]
+FP=tb[1,2]
+return((TN)/(TN+FP))
+}
+Specificity(data)
+```
+
+```{r}
+F1_score <- function(data) {
+tb <- table(train_flag_cm$predict_target,train_flag_cm$TARGET_FLAG)
+TN=tb[1,1]
+TP=tb[2,2]
+FN=tb[2,1]
+FP=tb[1,2]
+Precision = (TP)/(TP+FP)
+Sensitivity = (TP)/(TP+FN)
+Precision =(TP)/(TP+FP)
+return((2*Precision*Sensitivity)/(Precision+Sensitivity))
+}
+F1_score(data)
+```
+
+
+#Test the reduced model on evaluation data
+```{r}
+evaluation <- read.csv("https://raw.githubusercontent.com/jjohn81/DATA621_Assignment4/master/insurance-evaluation.csv")
+evaluation2 <- evaluation
+dim(evaluation)
+```
+```{r}
+str(evaluation)
+```
+
+
+
+
+
+
+```{r}
+evaluation$INDEX <- NULL
+evaluation$TARGET_AMT <- 0
+evaluation$TARGET_FLAG <- 0
+```
+
+
+```{r}
+str(evaluation)
+```
+
+
+
+
+```{r}
+#remove "$"
+money = function(input) {
+  out = sub("\\$", "", input)
+  out = as.numeric(sub(",", "", out))
+  return(out)
+}
+
+# Remove " ", replace with "_"
+underscore = function(input) {
+  out = sub(" ", "_", input)
+  return(out)
+}
+
+evaluation = as.tbl(evaluation) %>% 
+  mutate_at(c("INCOME","HOME_VAL","BLUEBOOK","OLDCLAIM"),
+            money) %>% 
+  mutate_at(c("EDUCATION","JOB","CAR_TYPE","URBANICITY"),
+            underscore) %>% 
+  mutate_at(c("EDUCATION","JOB","CAR_TYPE","URBANICITY"),
+            as.factor) %>% 
+  mutate(TARGET_FLAG = as.factor(TARGET_FLAG))
+```
+
+```{r}
+evaluation$AGE[is.na(evaluation$AGE)] <- mean(evaluation$AGE, na.rm=TRUE)
+evaluation$YOJ[is.na(evaluation$YOJ)] <- mean(evaluation$YOJ, na.rm=TRUE)
+evaluation$HOME_VAL[is.na(evaluation$HOME_VAL)] <- mean(evaluation$HOME_VAL, na.rm=TRUE)
+evaluation$CAR_AGE[is.na(evaluation$CAR_AGE)] <- mean(evaluation$CAR_AGE, na.rm=TRUE)
+evaluation$INCOME[is.na(evaluation$INCOME)] <- mean(evaluation$INCOME, na.rm=TRUE)
+evaluation <- evaluation[complete.cases(evaluation),]
+```
+
+
+```{r}
+evaluation$INCOME <- as.numeric(evaluation$INCOME)
+evaluation$HOME_VAL <- as.numeric(evaluation$HOME_VAL)
+evaluation$BLUEBOOK <- as.numeric(evaluation$BLUEBOOK)
+evaluation$OLDCLAIM <- as.numeric(evaluation$OLDCLAIM)
+```
+
+
+
+
+
+
+```{r}
+evaluation$INCOME_MOD <- evaluation$INCOME ^0.433
+evaluation$HOME_VAL_MOD <- evaluation$HOME_VAL^0.102
+evaluation$BLUEBOOK_MOD <- evaluation$BLUEBOOK^0.461
+evaluation$OLD_CLAIM_MOD <- log(evaluation$OLDCLAIM + 1) 
+```
+
+
+```{r}
+evaluation$PARENT1 <- ifelse(evaluation$PARENT1=="Yes", 1, 0)
+evaluation$MSTATUS <- ifelse(evaluation$MSTATUS=="Yes", 1, 0)
+evaluation$SEX <- ifelse(evaluation$SEX=="M", 1, 0)
+evaluation$CAR_USE <- ifelse(evaluation$CAR_USE=="Commercial", 1, 0)
+evaluation$RED_CAR <- ifelse(evaluation$RED_CAR=="Yes", 1, 0)
+evaluation$REVOKED <- ifelse(evaluation$REVOKED=="Yes", 1, 0)
+evaluation$URBANICITY <- ifelse(evaluation$URBANICITY == "Highly Urban/ Urban", 1, 0)
+
+
+evaluation$HSDropout <- ifelse(evaluation$EDUCATION=="<High School", 1, 0)
+evaluation$Bachelors <- ifelse(evaluation$EDUCATION=="Bachelors", 1, 0)
+evaluation$Masters <- ifelse(evaluation$EDUCATION=="Masters", 1, 0)
+evaluation$PhD <- ifelse(evaluation$EDUCATION=="PhD", 1, 0)
+
+
+evaluation$Panel_Truck <- ifelse(evaluation$CAR_TYPE=="Panel Truck", 1, 0)
+evaluation$Pickup <- ifelse(evaluation$CAR_TYPE=="Pickup", 1, 0)
+evaluation$Sports_Car <- ifelse(evaluation$CAR_TYPE=="Sports Car", 1, 0)
+evaluation$Van <- ifelse(evaluation$CAR_TYPE=="Van", 1, 0)
+evaluation$SUV <- ifelse(evaluation$CAR_TYPE=="z_SUV", 1, 0)
+
+
+evaluation$Professional <- ifelse(evaluation$JOB == "Professional", 1, 0)
+evaluation$Blue_Collar <- ifelse(evaluation$JOB == "Professional", 1, 0)
+evaluation$Clerical <- ifelse(evaluation$JOB == "Clerical", 1, 0)
+evaluation$Doctor <- ifelse(evaluation$JOB == "Doctor", 1, 0)
+evaluation$Lawyer <- ifelse(evaluation$JOB == "Lawyer", 1, 0)
+evaluation$Manager <- ifelse(evaluation$JOB == "Manager", 1, 0)
+evaluation$Home_Maker <- ifelse(evaluation$JOB == "Home Maker", 1, 0)
+evaluation$Student <- ifelse(evaluation$JOB == "Student", 1, 0)
+```
+
+
+```{r}
+evaluation_mod <- evaluation
+```
+
+```{r}
+write.csv(evaluation_mod, file="evaluation_mod.csv")
+```
+#this step is to save the transformed dataset of evluation for TARGET_ATM analysis use.
+
+
+```{r}
+TARGET_FLAG <- predict(reduced_model, newdata = evaluation, type="response")
+
+y_pred_num <- ifelse(TARGET_FLAG > 0.5, 1, 0)
+y_pred <- factor(y_pred_num, levels=c(0, 1))
+summary(y_pred)
+```
+
+
+
+
+
+
+
+
+
+
+
