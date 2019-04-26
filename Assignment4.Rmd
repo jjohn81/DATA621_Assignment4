@@ -108,45 +108,6 @@ summary(x)
 summary(x1)
 ```
 
-
-```{r}
-#Convert indicator variables to 0s and 1s; 1 = Yes, Male for Sex, Commercial for Car Use, Red for RED_CAR, and Highly Urban for URBANICITY
-#train_clean$PARENT1 <- ifelse(train_clean$PARENT1=="Yes", 1, 0)
-#train_clean$MSTATUS <- ifelse(train_clean$MSTATUS=="Yes", 1, 0)
-#train_clean$SEX <- ifelse(train_clean$SEX=="M", 1, 0)
-#train_clean$CAR_USE <- ifelse(train_clean$CAR_USE=="Commercial", 1, 0)
-#train_clean$RED_CAR <- ifelse(train_clean$RED_CAR=="Yes", 1, 0)
-#train_clean$REVOKED <- ifelse(train_clean$REVOKED=="Yes", 1, 0)
-#train_clean$URBANICITY <- ifelse(train_clean$URBANICITY == "Highly Urban/ Urban", 1, 0)
-#
-##Convert categorical predictor values to indicator variables - EDUCATION, CAR_TYPE, JOB
-#
-##EDUCATION, High school graduate is base case
-#train_clean$HSDropout <- ifelse(train_clean$EDUCATION=="<High School", 1, 0)
-#train_clean$Bachelors <- ifelse(train_clean$EDUCATION=="Bachelors", 1, 0)
-#train_clean$Masters <- ifelse(train_clean$EDUCATION=="Masters", 1, 0)
-#train_clean$PhD <- ifelse(train_clean$EDUCATION=="PhD", 1, 0)
-#
-##CAR_TYPE, base case is minivan
-#train_clean$Panel_Truck <- ifelse(train_clean$CAR_TYPE=="Panel Truck", 1, 0)
-#train_clean$Pickup <- ifelse(train_clean$CAR_TYPE=="Pickup", 1, 0)
-#train_clean$Sports_Car <- ifelse(train_clean$CAR_TYPE=="Sports Car", 1, 0)
-#train_clean$Van <- ifelse(train_clean$CAR_TYPE=="Van", 1, 0)
-#train_clean$SUV <- ifelse(train_clean$CAR_TYPE=="z_SUV", 1, 0)
-#
-##JOB, base case is ""
-#train_clean$Professional <- ifelse(train_clean$JOB == "Professional", 1, 0)
-#train_clean$Blue_Collar <- ifelse(train_clean$JOB == "Professional", 1, 0)
-#train_clean$Clerical <- ifelse(train_clean$JOB == "Clerical", 1, 0)
-#train_clean$Doctor <- ifelse(train_clean$JOB == "Doctor", 1, 0)
-#train_clean$Lawyer <- ifelse(train_clean$JOB == "Lawyer", 1, 0)
-#train_clean$Manager <- ifelse(train_clean$JOB == "Manager", 1, 0)
-#train_clean$Home_Maker <- ifelse(train_clean$JOB == "Home Maker", 1, 0)
-#train_clean$Student <- ifelse(train_clean$JOB == "Student", 1, 0)
-
-```
-
-
 INCOME, HOME_VAL, BLUEBOOK, and OLDCLAIM are represented as strings. So we will be extracting the numeric values for these.
 ```{r}
 train_clean$INCOME <- as.numeric(train_clean$INCOME)
@@ -224,14 +185,14 @@ head(train_clean)
 ```{r}
 
 train_flag <- train[,-c(1)] 
-full.model.glm <- glm(TARGET_FLAG ~. , data = train_flag, family = binomial(link='logit'))
+full.model.glm <- glm(TARGET_FLAG ~.-TARGET_AMT , data = train_flag, family = binomial(link='logit'))
 summary(full.model.glm)
 ```
 
 #####Transform_model: including the transformed variables 
 ```{r}
 #train_flag <- train_clean[,-c(1)] 
-transform_model.glm <- glm(TARGET_FLAG ~., data = train_clean, family = binomial(link='logit'))
+transform_model.glm <- glm(TARGET_FLAG ~.-TARGET_AMT, data = train_clean, family = binomial(link='logit'))
 summary(transform_model.glm)
 ```
 
@@ -246,38 +207,56 @@ summary(transform_model_step.glm)
 #### Models for Amount
  
 #####Full Model 
-First model includes all variables excluding index, this model has Adjusted R-squared of  0.2886. A model with out target falg has low Adjusted R-squared of   0.06665.    Model with TARGET_FLAG  has fewer statistically significatint predictor. 
+First model includes all variables excluding index. This model has Adjusted R-squared of 0.2886 and only few variables are statistically significatint.  A model with out 'TARGET_FLAG' has low Adjusted R-squared of 0.06665. Model with 'TARGET_FLAG'  has fewer statistically significatint predictor. Since we are predicting claim amount, we believe we dont need to include 'TARGET_FLAG' and any observation  where 'TARGET_FLAG' is zero. However, model with 'TARGET_FLAG' has Adjusted R-squared value and needs further investigation. Both models are statistically significant comapred to the null model.
+
 ```{r}
 
-full.model <- lm(TARGET_AMT ~ .  , train, na.action = na.exclude)
+full.model <- lm(TARGET_AMT ~ .  , data = train_clean, na.action = na.exclude)
 summary(full.model)
 
-train1 <- train[ which(train$TARGET_FLAG==1),] 
-train1 <- train1[,-c(1,2)] 
+train1 <- train_clean[ which(train_clean$TARGET_FLAG==1),] 
+train1 <- train1[,-c(1)] 
 
-full.model.onlyFlag <- lm(TARGET_AMT ~ .  ,data= train1, na.action = na.exclude)
-summary(full.model.onlyFlag)
+full.model.onlyFlag1 <- lm(TARGET_AMT ~ .  ,data= train1, na.action = na.exclude)
+
+summary(full.model.onlyFlag1)
 
 
 ```
 
 #####Step 
+We used Stepwise Algorithm on above models and we got simliar results.  We see from the results below the full model has better Adjusted R-squared and more predictors are statistically significant. 
+
 ```{r}
-full.model.step <- step(full.model, trace = 0, keep = NULL)
-summary(full.model.step) 
-full.model.step$anov
+model.step <- step(full.model, trace = 0, keep = NULL)
+summary(model.step) 
+
+
+model.onlyFlga1.step <- step(full.model.onlyFlag1, trace = 0, keep = NULL)
+summary(model.onlyFlga1.step) 
+
+
 ```
 
 #####Cross Validation
- 
+We see simliar results from this models as well.  We see from the results below the full model has better Adjusted R-squared than model with out TARGET_FLAG.
 ```{r}
 set.seed(123) 
 train.control <- trainControl(method = "cv", number = 10)
 # Train the model
-model <- train(TARGET_AMT ~., data = train, method = "lm",
+xModel <- train(TARGET_AMT ~., data = train_clean, method = "lm",
                trControl = train.control)
-print(model)
-summary(model) 
+
+summary(xModel) 
+
+
+train1 <- train_clean[ which(train_clean$TARGET_FLAG==1),] 
+train1 <- train1[,-c(1)] 
+xModel_onlyFlag1 <- train(TARGET_AMT ~., data = train1, method = "lm",
+               trControl = train.control)
+
+summary(xModel_onlyFlag1) 
+
 ```
 
 
@@ -287,100 +266,83 @@ summary(model)
  
  4. SELECT MODELS (25 Points) 
  
-Decide on the criteria for selecting the best multiple linear regression model and the best binary logistic regression model. Will you select models with slightly worse performance if it makes more sense or is more parsimonious? Discuss why you selected your models.  
- 
-For the multiple linear regression model, will you use a metric such as Adjusted R2, RMSE, etc.? Be sure to explain how you can make inferences from the model, discuss multi-collinearity issues (if any), and discuss other relevant model output. Using the training data set, evaluate the multiple linear regression model based on (a) mean squared error, (b) R2, (c) F-statistic, and (d) residual plots. For the binary logistic regression model, will you use a metric such as log likelihood, AIC, ROC curve, etc.? Using the training data set, evaluate the binary logistic regression model based on (a) accuracy, (b) classification error rate, (c) precision, (d) sensitivity, (e) specificity, (f) F1 score, (g) AUC, and (h) confusion matrix. Make predictions using the evaluation data set. 
+##### ROC and AUC
+Sensitivity, Specificity ROC and Area under curver are very similar for all the models. We cant select one model over another based on these. 
 ```{r}
-train_flag$predict_full_glm <- predict(full.model.glm, train_flag, type='response')
+par(mfrow=c(1, 3))
+train_flag$predict_full_glm <- ifelse(predict(full.model.glm, train_flag, type='response') > 0.5,1,0)
+roc_full_glm <- roc(train_flag$TARGET_FLAG, train_flag$predict_full_glm, plot=T, asp=NA,
+                legacy.axes=T, main = "ROC Full Model", col="red", levels=c(0,1))
 
-roc_reduced_model <- roc(train_flag$TARGET_FLAG, train_flag$predict_full_glm, plot=T, asp=NA,
-                legacy.axes=T, main = "ROC Curve Reduced Model", col="red")
-```
+train_clean$transform_model_glm <- ifelse(predict(transform_model.glm, train_clean, type='response') > 0.5,1,0)
 
-```{r}
-roc_reduced_model["auc"]
-```
-Build confusion matrix
-```{r}
-train_flag$predict_target <- ifelse(train_flag$predict >=0.5, 1, 0)
-train_flag$predict_target <- as.integer(train_flag$predict_target)
-myvars <- c("TARGET_FLAG", "predict_target")
-train_flag_cm <- train_flag[myvars]
-cm <- table(train_flag_cm$predict_target,train_flag_cm$TARGET_FLAG)
-knitr:: kable(cm)
-```
-    
-    
-```{r}
-Accuracy <- function(data) {
-tb <- table(train_flag_cm$predict_target,train_flag_cm$TARGET_FLAG)
-TN=tb[1,1]
-TP=tb[2,2]
-FN=tb[2,1]
-FP=tb[1,2]
-return((TP+TN)/(TP+FP+TN+FN))
-}
-Accuracy(data)
-```
-```{r}
-CER <- function(data) {
-tb <- table(train_flag_cm$predict_target,train_flag_cm$TARGET_FLAG)
-TN=tb[1,1]
-TP=tb[2,2]
-FN=tb[2,1]
-FP=tb[1,2]
-return((FP+FN)/(TP+FP+TN+FN))
-}
-CER(data)
-```
-```{r}
-Precision <- function(data) {
-tb <- table(train_flag_cm$predict_target,train_flag_cm$TARGET_FLAG)
-TP=tb[2,2]
-FP=tb[1,2]
-return((TP)/(TP+FP))
-}
-Precision(data)
+roc_transform_model_glm <- roc(train_clean$TARGET_FLAG, train_clean$transform_model_glm, plot=T, asp=NA,
+                legacy.axes=T, main = "ROC Transformed", col="red" ,levels=c(0,1))
+
+train_clean$transform_model_step_glm <-  ifelse(predict(transform_model_step.glm, train_clean, type='response') > 0.5,1,0)
+
+roc_transform_model_step_glm <- roc(train_clean$TARGET_FLAG, train_clean$transform_model_step_glm, plot=T, asp=NA,
+                legacy.axes=T, main = "ROC Step Wise", col="red", levels=c(0,1))
+
 ```
 
 ```{r}
-Sensitivity <- function(data) {
-tb <- table(train_flag_cm$predict_target,train_flag_cm$TARGET_FLAG)
-TP=tb[2,2]
-FN=tb[2,1]
-return((TP)/(TP+FN))
-}
-Sensitivity(data)
+confusionMatrix(table(train_flag$TARGET_FLAG, train_flag$predict_full_glm))$byClass
+confusionMatrix(table(train_clean$TARGET_FLAG, train_clean$transform_model_glm))$byClass
+confusionMatrix(table(train_clean$TARGET_FLAG, train_clean$transform_model_step_glm))$byClass
+
+auc.model <- matrix(c(auc(roc_full_glm),auc(roc_transform_model_glm), auc(roc_transform_model_step_glm)), ncol = 3, nrow=1, byrow = T)
+colnames(auc.model)<-c("Full", "Transformed", "Step Transformed")
+rownames(auc.model)<- c("AUC")
+auc.model
 ```
+
+
+#### AIC 
+
+All three models have very simliar AIC. Transformed and Transformed Step models have slightly better  AIC values. 
+
+```{r  echo= F}
+aic <- matrix(c(full.model.glm$aic,transform_model.glm$aic,transform_model.glm$aic), ncol = 3, nrow=1, byrow = T)
+colnames(aic)<-c("Full", "Transformed", "Transformed Step")
+rownames(aic)<- c("AIC")
+aic
+```
+#### Deviance
+
+Based on the ANOVA summary of the deviance we Transformed and Transformed Step models are slightly better than the full model.
+
+```{r echo= F}
+anova(full.model.glm, transform_model.glm, transform_model.glm)
+
+```
+##### Models for predicting Target amount
+
+Based on the table below we see that all models with 'TARGET_FLAG1'  have higher Adjusted R-squared values. 
+Models with out TARGET_FLAG1 and excluding TARGET_FLAG1=0 observation have low Adjusted R-squared values, therefore doesnt explain the variablity in the data well. RMSE values for the models with TARGET_FLAG1 are also far better than models with out TARGET_FLAG1 suggesting models with TARGET_FLAG1 are better fits the data. 
+
 ```{r}
-Specificity <- function(data) {
-tb <- table(train_flag_cm$predict_target,train_flag_cm$TARGET_FLAG)
-TN=tb[1,1]
-TP=tb[2,2]
-FN=tb[2,1]
-FP=tb[1,2]
-return((TN)/(TN+FP))
-}
-Specificity(data)
+
+ rsq <-c(summary(full.model)$adj.r.squared,summary(full.model.onlyFlag1)$adj.r.squared,
+summary(model.step)$adj.r.squared,summary(model.onlyFlga1.step)$adj.r.squared,
+  xModel$results$Rsquared, xModel_onlyFlag1$results$Rsquared)
+modelnames <- c('FullModel', 'FullOnlyFlag1', 'FullModelStep','FullOnlyFlag1Step','CrossValidation','CrossValidationFalg1' )
+names(rsq)<- modelnames
+rsq
+rmse <- c(sqrt(mean(full.model$residuals^2)),sqrt(mean(full.model.onlyFlag1$residuals^2)),
+sqrt(mean(model.step$residuals^2)),sqrt(mean(model.onlyFlga1.step$residuals^2)),
+ xModel$results$RMSE, xModel_onlyFlag1$results$RMSE)
+
+names(rmse)<- modelnames
+rmse
+par(mfrow=c(2, 3))
+plot(full.model$residuals~full.model$fitted.values)
+plot(full.model.onlyFlag1$residuals~full.model.onlyFlag1$fitted.values)
+plot(model.step$residuals~model.step$fitted.values)
+plot(model.onlyFlga1.step$residuals~model.onlyFlga1.step$fitted.values)
+plot(xModel$residuals~xModel$fitted.values)
+plot(xModel_onlyFlag1$residuals~xModel_onlyFlag1$fitted.values)
 ```
-
-```{r}
-F1_score <- function(data) {
-tb <- table(train_flag_cm$predict_target,train_flag_cm$TARGET_FLAG)
-TN=tb[1,1]
-TP=tb[2,2]
-FN=tb[2,1]
-FP=tb[1,2]
-Precision = (TP)/(TP+FP)
-Sensitivity = (TP)/(TP+FN)
-Precision =(TP)/(TP+FP)
-return((2*Precision*Sensitivity)/(Precision+Sensitivity))
-}
-F1_score(data)
-```
-
-
-
 #Test the reduced model on evaluation data
 ```{r}
 evaluation <- read.csv("https://raw.githubusercontent.com/jjohn81/DATA621_Assignment4/master/insurance-evaluation.csv")
