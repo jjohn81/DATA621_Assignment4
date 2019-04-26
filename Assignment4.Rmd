@@ -38,6 +38,7 @@ require(leaps)
 ```{r}
 train <- read.csv("https://raw.githubusercontent.com/jjohn81/DATA621_Assignment4/master/insurance_training.csv")
 test <- read.csv("https://raw.githubusercontent.com/jjohn81/DATA621_Assignment4/master/insurance-evaluation.csv")
+test_actual <- test
 ```
 
 In this, we will explore, analyze and model a data set containing approximately 8000 records representing a customer at an auto insurance company. Each record has two response variables. The first response variable, TARGET_FLAG, is a 1 or a 0. A "1" means that the person was in a car crash. A zero means that the person was not in a car crash. The second response variable is TARGET_AMT. This value is zero if the person did not crash their car. But if they did crash their car, this number will be a value greater than zero. We will build multiple linear regression and binary logistic regression models on the training data to predict the probability that a person will crash their car and also the amount of money it will cost if the person does crash their car.  
@@ -68,7 +69,18 @@ underscore = function(input) {
   return(out)
 }
 
+
+
 train = as.tbl(train) %>% 
+  mutate_at(c("INCOME","HOME_VAL","BLUEBOOK","OLDCLAIM"),
+            money) %>% 
+  mutate_at(c("EDUCATION","JOB","CAR_TYPE","URBANICITY"),
+            underscore) %>% 
+  mutate_at(c("EDUCATION","JOB","CAR_TYPE","URBANICITY"),
+            as.factor) %>% 
+  mutate(TARGET_FLAG = as.factor(TARGET_FLAG))
+
+test = as.tbl(test) %>% 
   mutate_at(c("INCOME","HOME_VAL","BLUEBOOK","OLDCLAIM"),
             money) %>% 
   mutate_at(c("EDUCATION","JOB","CAR_TYPE","URBANICITY"),
@@ -89,6 +101,7 @@ a. Fix missing values (maybe with a Mean or Median value) b. Create flags to sug
 Impute missing data with column median for for income and home value  and  column mean for other columns. Convert indicator variables to 0s and 1s; 1 = Yes, Male for Sex, Commercial for Car Use, Red for RED_CAR, and Highly Urban for URBANICITY
 Convert categorical predictor values to indicator variables - EDUCATION, CAR_TYPE, JOB.Transform non normal variables like incone and house values using bobcox tranformation. 
 ```{r}
+
 train$AGE[is.na(train$AGE)] <- mean(train$AGE, na.rm=TRUE)
 train$YOJ[is.na(train$YOJ)] <- mean(train$YOJ, na.rm=TRUE)
 train$HOME_VAL[is.na(train$HOME_VAL)] <- median(train$HOME_VAL, na.rm=TRUE)
@@ -98,15 +111,18 @@ train <- train[complete.cases(train),]
 train_clean <- train
 train_clean$INDEX <- NULL
 
+
+test$AGE[is.na(test$AGE)] <- mean(test$AGE, na.rm=TRUE)
+test$YOJ[is.na(test$YOJ)] <- mean(test$YOJ, na.rm=TRUE)
+test$HOME_VAL[is.na(test$HOME_VAL)] <- median(test$HOME_VAL, na.rm=TRUE)
+test$CAR_AGE[is.na(test$CAR_AGE)] <- mean(test$CAR_AGE, na.rm=TRUE)
+test$INCOME[is.na(test$INCOME)] <- median(test$INCOME, na.rm=TRUE)
+#test <- test[complete.cases(test),]
+test_clean <- test
+test_clean$INDEX <- NULL
+
 ```
-```{r}
-x <- lm(train$TARGET_AMT~train$SEX, data = train)
-trainx <-train
-trainx$SEX <- ifelse(train$SEX=="M", 0,1)
-x1 <-  lm(trainx$TARGET_AMT~trainx$SEX, data = trainx)
-summary(x)
-summary(x1)
-```
+
 
 INCOME, HOME_VAL, BLUEBOOK, and OLDCLAIM are represented as strings. So we will be extracting the numeric values for these.
 ```{r}
@@ -114,6 +130,11 @@ train_clean$INCOME <- as.numeric(train_clean$INCOME)
 train_clean$HOME_VAL <- as.numeric(train_clean$HOME_VAL)
 train_clean$BLUEBOOK <- as.numeric(train_clean$BLUEBOOK)
 train_clean$OLDCLAIM <- as.numeric(train_clean$OLDCLAIM)
+
+test_clean$INCOME <- as.numeric(test_clean$INCOME)
+test_clean$HOME_VAL <- as.numeric(test_clean$HOME_VAL)
+test_clean$BLUEBOOK <- as.numeric(test_clean$BLUEBOOK)
+test_clean$OLDCLAIM <- as.numeric(test_clean$OLDCLAIM)
 ```
  
 ```{r}
@@ -143,20 +164,18 @@ We are going to do transformation.
 
 ```{r}
 boxcoxfit(train_clean$INCOME[train_clean$INCOME >0])
- 
 train_clean$INCOME_MOD <- train_clean$INCOME ^0.443
- 
 boxcoxfit(train_clean$HOME_VAL[train_clean$HOME_VAL > 0])
- 
 train_clean$HOME_VAL_MOD <- train_clean$HOME_VAL^0.102
- 
 boxcoxfit(train_clean$BLUEBOOK)
- 
 train_clean$BLUEBOOK_MOD <- train_clean$BLUEBOOK^0.461
- 
 boxcoxfit(train_clean$OLDCLAIM[train_clean$OLDCLAIM>0])
- 
 train_clean$OLD_CLAIM_MOD <- log(train_clean$OLDCLAIM + 1)   
+
+test_clean$INCOME_MOD <- test_clean$INCOME ^0.443
+test_clean$HOME_VAL_MOD <- test_clean$HOME_VAL^0.102
+test_clean$BLUEBOOK_MOD <- test_clean$BLUEBOOK^0.461
+test_clean$OLD_CLAIM_MOD <- log(test_clean$OLDCLAIM + 1)  
  
 ```
 
@@ -303,7 +322,7 @@ auc.model
 All three models have very simliar AIC. Transformed and Transformed Step models have slightly better  AIC values. 
 
 ```{r  echo= F}
-aic <- matrix(c(full.model.glm$aic,transform_model.glm$aic,transform_model.glm$aic), ncol = 3, nrow=1, byrow = T)
+aic <- matrix(c(full.model.glm$aic,transform_model.glm$aic,transform_model_step.glm$aic), ncol = 3, nrow=1, byrow = T)
 colnames(aic)<-c("Full", "Transformed", "Transformed Step")
 rownames(aic)<- c("AIC")
 aic
@@ -313,7 +332,7 @@ aic
 Based on the ANOVA summary of the deviance we Transformed and Transformed Step models are slightly better than the full model.
 
 ```{r echo= F}
-anova(full.model.glm, transform_model.glm, transform_model.glm)
+anova(full.model.glm, transform_model.glm, transform_model_step.glm)
 
 ```
 ##### Models for predicting Target amount
@@ -340,136 +359,47 @@ plot(full.model$residuals~full.model$fitted.values)
 plot(full.model.onlyFlag1$residuals~full.model.onlyFlag1$fitted.values)
 plot(model.step$residuals~model.step$fitted.values)
 plot(model.onlyFlga1.step$residuals~model.onlyFlga1.step$fitted.values)
-plot(xModel$residuals~xModel$fitted.values)
-plot(xModel_onlyFlag1$residuals~xModel_onlyFlag1$fitted.values)
+#plot(xModel$residuals~xModel$fitted.values)
+#plot(xModel_onlyFlag1$residuals~xModel_onlyFlag1$fitted.values)
 ```
 #Test the reduced model on evaluation data
-```{r}
-evaluation <- read.csv("https://raw.githubusercontent.com/jjohn81/DATA621_Assignment4/master/insurance-evaluation.csv")
-evaluation2 <- evaluation
-dim(evaluation)
-```
-```{r}
-str(evaluation)
-```
 
-
-
-
-
+All three models have same prediction for 'TARGET_FLAG'. Different models predict different TARGET_AMT. 
+A better approach would be to predict TARGET_FLAG and then run prediction on observation with TARGET_FLAG=1, in the scenario prediction makes sense.
 
 ```{r}
-evaluation$INDEX <- NULL
-evaluation$TARGET_AMT <- 0
-evaluation$TARGET_FLAG <- 0
+#model.onlyFlga1.step
+#full.model.step
+#xModel
+#xModel_onlyFlag1
+#full.model
+#full.model.onlyFlag1
+
+ 
+
+
+test_clean$TARGET_AMT <- as.numeric(test_clean$TARGET_AMT)
+
+predicted <- predict(full.model.glm, newdata = test_clean, type="response")
+test_clean$TARGET_FLAG  <- as.factor(ifelse(predicted  > 0.5,1,0))
+
+test_clean$TARGET_FLAG_Full  <- as.factor(ifelse(predicted  > 0.5,1,0))
+
+preditcted <- predict(transform_model.glm, newdata = test_clean, type="response")
+test_clean$TARGET_FLAG_Transform_Model  <- ifelse(predicted  > 0.5,1,0)
+predicted <- predict(transform_model_step.glm, newdata = test_clean, type="response")
+test_clean$TARGET_FLAG_Transform_Model_Step  <- ifelse(predicted  > 0.5,1,0)
+
+
+test_clean$TARGET_AMT_Full <- predict(full.model, newdata = test_clean)
+test_clean$TARGET_AMT_Full_Flag1  <- predict(full.model.onlyFlag1, newdata = test_clean, type="response")
+test_clean$TARGET_AMT_Step  <- predict(model.step, newdata = test_clean, type="response")
+test_clean$TARGET_AMT_Step_Flag1  <- predict(model.onlyFlga1.step, newdata = test_clean, type="response")
+test_clean$TARGET_AMT_Xmodel  <- predict(xModel, newdata = test_clean)
+test_clean$TARGET_AMT_xModel_onlyFlag1  <- predict(xModel_onlyFlag1, newdata = test_clean)
+write.csv(test_clean,"Data.csv")
+getwd()
 ```
-
-
-```{r}
-str(evaluation)
-```
-
-
-
-
-```{r}
-#remove "$"
-money = function(input) {
-  out = sub("\\$", "", input)
-  out = as.numeric(sub(",", "", out))
-  return(out)
-}
-
-# Remove " ", replace with "_"
-underscore = function(input) {
-  out = sub(" ", "_", input)
-  return(out)
-}
-
-evaluation = as.tbl(evaluation) %>% 
-  mutate_at(c("INCOME","HOME_VAL","BLUEBOOK","OLDCLAIM"),
-            money) %>% 
-  mutate_at(c("EDUCATION","JOB","CAR_TYPE","URBANICITY"),
-            underscore) %>% 
-  mutate_at(c("EDUCATION","JOB","CAR_TYPE","URBANICITY"),
-            as.factor) %>% 
-  mutate(TARGET_FLAG = as.factor(TARGET_FLAG))
-```
-
-```{r}
-evaluation$AGE[is.na(evaluation$AGE)] <- mean(evaluation$AGE, na.rm=TRUE)
-evaluation$YOJ[is.na(evaluation$YOJ)] <- mean(evaluation$YOJ, na.rm=TRUE)
-evaluation$HOME_VAL[is.na(evaluation$HOME_VAL)] <- mean(evaluation$HOME_VAL, na.rm=TRUE)
-evaluation$CAR_AGE[is.na(evaluation$CAR_AGE)] <- mean(evaluation$CAR_AGE, na.rm=TRUE)
-evaluation$INCOME[is.na(evaluation$INCOME)] <- mean(evaluation$INCOME, na.rm=TRUE)
-evaluation <- evaluation[complete.cases(evaluation),]
-```
-
-
-```{r}
-evaluation$INCOME <- as.numeric(evaluation$INCOME)
-evaluation$HOME_VAL <- as.numeric(evaluation$HOME_VAL)
-evaluation$BLUEBOOK <- as.numeric(evaluation$BLUEBOOK)
-evaluation$OLDCLAIM <- as.numeric(evaluation$OLDCLAIM)
-```
-
-
-
-
-
-
-```{r}
-evaluation$INCOME_MOD <- evaluation$INCOME ^0.433
-evaluation$HOME_VAL_MOD <- evaluation$HOME_VAL^0.102
-evaluation$BLUEBOOK_MOD <- evaluation$BLUEBOOK^0.461
-evaluation$OLD_CLAIM_MOD <- log(evaluation$OLDCLAIM + 1) 
-```
-
-
-```{r}
-evaluation$PARENT1 <- ifelse(evaluation$PARENT1=="Yes", 1, 0)
-evaluation$MSTATUS <- ifelse(evaluation$MSTATUS=="Yes", 1, 0)
-evaluation$SEX <- ifelse(evaluation$SEX=="M", 1, 0)
-evaluation$CAR_USE <- ifelse(evaluation$CAR_USE=="Commercial", 1, 0)
-evaluation$RED_CAR <- ifelse(evaluation$RED_CAR=="Yes", 1, 0)
-evaluation$REVOKED <- ifelse(evaluation$REVOKED=="Yes", 1, 0)
-evaluation$URBANICITY <- ifelse(evaluation$URBANICITY == "Highly Urban/ Urban", 1, 0)
-
-
-evaluation$HSDropout <- ifelse(evaluation$EDUCATION=="<High School", 1, 0)
-evaluation$Bachelors <- ifelse(evaluation$EDUCATION=="Bachelors", 1, 0)
-evaluation$Masters <- ifelse(evaluation$EDUCATION=="Masters", 1, 0)
-evaluation$PhD <- ifelse(evaluation$EDUCATION=="PhD", 1, 0)
-
-
-evaluation$Panel_Truck <- ifelse(evaluation$CAR_TYPE=="Panel Truck", 1, 0)
-evaluation$Pickup <- ifelse(evaluation$CAR_TYPE=="Pickup", 1, 0)
-evaluation$Sports_Car <- ifelse(evaluation$CAR_TYPE=="Sports Car", 1, 0)
-evaluation$Van <- ifelse(evaluation$CAR_TYPE=="Van", 1, 0)
-evaluation$SUV <- ifelse(evaluation$CAR_TYPE=="z_SUV", 1, 0)
-
-
-evaluation$Professional <- ifelse(evaluation$JOB == "Professional", 1, 0)
-evaluation$Blue_Collar <- ifelse(evaluation$JOB == "Professional", 1, 0)
-evaluation$Clerical <- ifelse(evaluation$JOB == "Clerical", 1, 0)
-evaluation$Doctor <- ifelse(evaluation$JOB == "Doctor", 1, 0)
-evaluation$Lawyer <- ifelse(evaluation$JOB == "Lawyer", 1, 0)
-evaluation$Manager <- ifelse(evaluation$JOB == "Manager", 1, 0)
-evaluation$Home_Maker <- ifelse(evaluation$JOB == "Home Maker", 1, 0)
-evaluation$Student <- ifelse(evaluation$JOB == "Student", 1, 0)
-```
-
-```{r}
-TARGET_FLAG <- predict(reduced_model, newdata = evaluation, type="response")
-
-y_pred_num <- ifelse(TARGET_FLAG > 0.5, 1, 0)
-y_pred <- factor(y_pred_num, levels=c(0, 1))
-summary(y_pred)
-```
-
-
-
-
 
 
 
