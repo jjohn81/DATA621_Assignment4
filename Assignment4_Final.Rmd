@@ -1,0 +1,603 @@
+---
+title: "DATA 621 Assignment 4"
+author: "Joby John,Jun Pan"
+date: "April 18, 2019"
+output:
+  word_document: default
+  html_document: default
+---
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(car)
+library(caTools)
+library(caret)
+library(corrplot)
+library(data.table)
+library(dplyr)
+library(geoR)
+library(ggplot2)
+library(grid)
+library(gridExtra)
+library(kableExtra)
+library(knitr)
+library(MASS)
+library(naniar)
+library(nortest)
+library(pROC)
+library(pscl)
+library(psych)
+library(reshape)
+library(PerformanceAnalytics)
+library(ROCR)
+library(testthat)
+library(UpSetR)
+require(leaps)
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+train <- read.csv("https://raw.githubusercontent.com/jjohn81/DATA621_Assignment4/master/insurance_training.csv")
+test <- read.csv("https://raw.githubusercontent.com/jjohn81/DATA621_Assignment4/master/insurance-evaluation.csv")
+test_actual <- test
+```
+
+In this, we will explore, analyze and model a data set containing approximately 8000 records representing a customer at an auto insurance company. Each record has two response variables. The first response variable, TARGET_FLAG, is a 1 or a 0. A "1" means that the person was in a car crash. A zero means that the person was not in a car crash. The second response variable is TARGET_AMT. This value is zero if the person did not crash their car. But if they did crash their car, this number will be a value greater than zero. We will build multiple linear regression and binary logistic regression models on the training data to predict the probability that a person will crash their car and also the amount of money it will cost if the person does crash their car.  
+
+#### 1. DATA EXPLORATION
+ 
+Dataset contains 8161 rows and 25 variables. There are 6 observations missing data for Age, 454 missing data for YOK, 445 missing data for income and 464 missing data of home value. We will use mean or median of the variable to fill in any missing values. We will also tranform money and other formatted values to numerical values. 
+
+Below is the summary of the data. 
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+summary(train)
+```
+
+Data transformation
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+#remove "$"
+money = function(input) {
+  out = sub("\\$", "", input)
+  out = as.numeric(sub(",", "", out))
+  return(out)
+}
+
+# Remove " ", replace with "_"
+underscore = function(input) {
+  out = sub(" ", "_", input)
+  return(out)
+}
+
+
+
+train = as.tbl(train) %>% 
+  mutate_at(c("INCOME","HOME_VAL","BLUEBOOK","OLDCLAIM"),
+            money) %>% 
+  mutate_at(c("EDUCATION","JOB","CAR_TYPE","URBANICITY"),
+            underscore) %>% 
+  mutate_at(c("EDUCATION","JOB","CAR_TYPE","URBANICITY"),
+            as.factor) %>% 
+  mutate(TARGET_FLAG = as.factor(TARGET_FLAG))
+
+test = as.tbl(test) %>% 
+  mutate_at(c("INCOME","HOME_VAL","BLUEBOOK","OLDCLAIM"),
+            money) %>% 
+  mutate_at(c("EDUCATION","JOB","CAR_TYPE","URBANICITY"),
+            underscore) %>% 
+  mutate_at(c("EDUCATION","JOB","CAR_TYPE","URBANICITY"),
+            as.factor) %>% 
+  mutate(TARGET_FLAG = as.factor(TARGET_FLAG))
+```
+
+
+#### 2. DATA PREPARATION
+
+Fix missing data with column median for income and home values; column mean for other columns. Convert indicator variables to 0s and 1s; 1 = Yes, Male for Sex, Commercial for Car Use, Red for RED_CAR, and Highly Urban for URBANICITY
+Convert categorical predictor values to indicator variables - EDUCATION, CAR_TYPE, JOB.
+Transform non normal variables like incone and house values using bobcox tranformation. 
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+train$AGE[is.na(train$AGE)] <- mean(train$AGE, na.rm=TRUE)
+train$YOJ[is.na(train$YOJ)] <- mean(train$YOJ, na.rm=TRUE)
+train$HOME_VAL[is.na(train$HOME_VAL)] <- median(train$HOME_VAL, na.rm=TRUE)
+train$CAR_AGE[is.na(train$CAR_AGE)] <- mean(train$CAR_AGE, na.rm=TRUE)
+train$INCOME[is.na(train$INCOME)] <- median(train$INCOME, na.rm=TRUE)
+train <- train[complete.cases(train),]
+train_clean <- train
+train_clean$INDEX <- NULL
+
+
+test$AGE[is.na(test$AGE)] <- mean(test$AGE, na.rm=TRUE)
+test$YOJ[is.na(test$YOJ)] <- mean(test$YOJ, na.rm=TRUE)
+test$HOME_VAL[is.na(test$HOME_VAL)] <- median(test$HOME_VAL, na.rm=TRUE)
+test$CAR_AGE[is.na(test$CAR_AGE)] <- mean(test$CAR_AGE, na.rm=TRUE)
+test$INCOME[is.na(test$INCOME)] <- median(test$INCOME, na.rm=TRUE)
+#test <- test[complete.cases(test),]
+test_clean <- test
+test_clean$INDEX <- NULL
+
+```
+
+
+INCOME, HOME_VAL, BLUEBOOK, and OLDCLAIM are represented as strings. So we will be extracting the numeric values for these.
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+train_clean$INCOME <- as.numeric(train_clean$INCOME)
+train_clean$HOME_VAL <- as.numeric(train_clean$HOME_VAL)
+train_clean$BLUEBOOK <- as.numeric(train_clean$BLUEBOOK)
+train_clean$OLDCLAIM <- as.numeric(train_clean$OLDCLAIM)
+
+test_clean$INCOME <- as.numeric(test_clean$INCOME)
+test_clean$HOME_VAL <- as.numeric(test_clean$HOME_VAL)
+test_clean$BLUEBOOK <- as.numeric(test_clean$BLUEBOOK)
+test_clean$OLDCLAIM <- as.numeric(test_clean$OLDCLAIM)
+```
+ 
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+ntrain<-select_if(train_clean, is.numeric)
+```
+
+
+Density plot of variables 
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+ntrain <- ntrain[,c("INCOME","HOME_VAL","BLUEBOOK","OLDCLAIM")]
+ntrain <- as.data.frame((ntrain))
+
+par(mfrow=c(2, 2))
+colnames <- dimnames(ntrain)[[2]]
+
+for(col in 1:4) {
+    d <- density(na.omit(ntrain[,col]))
+    plot(d, type="n", main=colnames[col])
+    polygon(d, col="blue", border="gray")
+}
+  
+
+```
+
+From the density plot, we can see that INCOME, HOME_VAL, BLUEBOOK and OLDCLAIM are  skewed.
+We are transforming these variables using 'boxcoxfit'
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+boxcoxfit(train_clean$INCOME[train_clean$INCOME >0])
+train_clean$INCOME_MOD <- train_clean$INCOME ^0.443
+boxcoxfit(train_clean$HOME_VAL[train_clean$HOME_VAL > 0])
+train_clean$HOME_VAL_MOD <- train_clean$HOME_VAL^0.102
+boxcoxfit(train_clean$BLUEBOOK)
+train_clean$BLUEBOOK_MOD <- train_clean$BLUEBOOK^0.461
+boxcoxfit(train_clean$OLDCLAIM[train_clean$OLDCLAIM>0])
+train_clean$OLD_CLAIM_MOD <- log(train_clean$OLDCLAIM + 1)   
+
+test_clean$INCOME_MOD <- test_clean$INCOME ^0.443
+test_clean$HOME_VAL_MOD <- test_clean$HOME_VAL^0.102
+test_clean$BLUEBOOK_MOD <- test_clean$BLUEBOOK^0.461
+test_clean$OLD_CLAIM_MOD <- log(test_clean$OLDCLAIM + 1)  
+ 
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+pairs(~MVR_PTS+CLM_FREQ+URBANICITY+HOME_VAL+PARENT1+CAR_USE+OLDCLAIM, data=train_clean, main="Predictors with High Correlattions to Targets", col="slategrey")
+```
+
+#### 3. MODELS 
+ 
+
+#### Models for TARGET_FLAG
+
+##### Full Model
+First model, we call it original_full_model,  seek the correlation between TARGET_FLAG wiht original viarables. In this model, most of the variables are statistically significant with AIC score of 7373.6. We will compare the AIC values of other models to select a good model for predicting TARGET_FLAG.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+train_flag <- train[,-c(1)] 
+full.model.glm <- glm(TARGET_FLAG ~.-TARGET_AMT , data = train_flag, family = binomial(link='logit'))
+summary(full.model.glm)
+```
+
+#####Transformed Model: Including the transformed variables 
+Second model, we call it Transformed model,  seek the correlation between TARGET_FLAG wiht original viarables. Skewed predictor variables are transformed in this model.  In this model, most of the variables are statistically significant with AIC score of 7335.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+transform_model.glm <- glm(TARGET_FLAG ~.-TARGET_AMT, data = train_clean, family = binomial(link='logit'))
+summary(transform_model.glm)
+```
+
+#####Step Model
+Third model, we call it Step model, seek the correlation between TARGET_FLAG with original viarables. This model uses "Stepwise Algorithm" on "Transformed Model".  In this model, most of the variables are statistically significant with AIC score of 7322. This model inludes only 32 predictor variables, other models have 42 predictors variables. This is a simpler model than the previous models with better AIC.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+transform_model_step.glm <- step( transform_model.glm,trace = 0, keep = NULL)
+summary(transform_model_step.glm) 
+```
+
+
+
+#### Models for Amount
+All TARGET_AMT modeling are done using the tranformed data. We are building models with and with out 'TARGET_FLAG' to see its impact on models. Models with 'TARGET_FLAG' have higher Adjusted R-squared values. 
+
+#####Full Model 
+First model includes all variables excluding index. This model has Adjusted R-squared of 0.2886 and only few variables are statistically significatint. A model with out 'TARGET_FLAG' has low Adjusted R-squared of 0.06665. Model with 'TARGET_FLAG'  has fewer statistically significatint predictor. Since we are predicting claim amount, we believe we dont need to include 'TARGET_FLAG' and any observation  where 'TARGET_FLAG' is zero. However, model with 'TARGET_FLAG' has Adjusted R-squared value and needs further investigation. Both models are statistically significant comapred to the null model. We build models that includes TARGET_FLAG and models with out TARGET_FLAG.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+full.model <- lm(TARGET_AMT ~ .  , data = train_clean, na.action = na.exclude)
+summary(full.model)
+
+train1 <- train_clean[ which(train_clean$TARGET_FLAG==1),] 
+train1 <- train1[,-c(1)] 
+
+full.model.onlyFlag1 <- lm(TARGET_AMT ~ .  ,data= train1, na.action = na.exclude)
+
+summary(full.model.onlyFlag1)
+
+```
+
+#####Step 
+
+We used Stepwise Algorithm on above models and we got simliar results.  We see from the results below, the full model has better Adjusted R-squared and more predictors are statistically significant. "model.step " which include TARGET_AMT has better Adjusted R-squared than model with out. These models have fewer predictor varables and all the variables are statistically significant in the model with out TARGET_AMT. These models are lot simpler than above models.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+model.step <- step(full.model, trace = 0, keep = NULL)
+summary(model.step) 
+model.onlyFlga1.step <- step(full.model.onlyFlag1, trace = 0, keep = NULL)
+summary(model.onlyFlga1.step) 
+```
+
+#####Cross Validation
+
+We see simliar results from this models as well.  We see from the results below the full model has better Adjusted R-squared than model with out TARGET_FLAG.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+set.seed(123) 
+train.control <- trainControl(method = "cv", number = 10)
+# Train the model
+xModel <- train(TARGET_AMT ~., data = train_clean, method = "lm",
+               trControl = train.control)
+
+summary(xModel) 
+
+
+train1 <- train_clean[ which(train_clean$TARGET_FLAG==1),] 
+train1 <- train1[,-c(1)] 
+xModel_onlyFlag1 <- train(TARGET_AMT ~., data = train1, method = "lm",
+               trControl = train.control)
+
+summary(xModel_onlyFlag1) 
+
+```
+
+ 4. SELECT MODELS (25 Points) 
+ 
+##### ROC and AUC
+
+Sensitivity, Specificity ROC and Area under curver are very similar for all the models. We cant select one model over another based on these. 
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+par(mfrow=c(1, 3))
+train_flag$predict_full_glm <- ifelse(predict(full.model.glm, train_flag, type='response') > 0.5,1,0)
+roc_full_glm <- roc(train_flag$TARGET_FLAG, train_flag$predict_full_glm, plot=T, asp=NA,
+                legacy.axes=T, main = "ROC Full Model", col="red", levels=c(0,1))
+
+train_clean$transform_model_glm <- ifelse(predict(transform_model.glm, train_clean, type='response') > 0.5,1,0)
+
+roc_transform_model_glm <- roc(train_clean$TARGET_FLAG, train_clean$transform_model_glm, plot=T, asp=NA,
+                legacy.axes=T, main = "ROC Transformed", col="red" ,levels=c(0,1))
+
+train_clean$transform_model_step_glm <-  ifelse(predict(transform_model_step.glm, train_clean, type='response') > 0.5,1,0)
+
+roc_transform_model_step_glm <- roc(train_clean$TARGET_FLAG, train_clean$transform_model_step_glm, plot=T, asp=NA,
+                legacy.axes=T, main = "ROC Step Wise", col="red", levels=c(0,1))
+
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+confusionMatrix(table(train_flag$TARGET_FLAG, train_flag$predict_full_glm))$byClass
+confusionMatrix(table(train_clean$TARGET_FLAG, train_clean$transform_model_glm))$byClass
+confusionMatrix(table(train_clean$TARGET_FLAG, train_clean$transform_model_step_glm))$byClass
+
+auc.model <- matrix(c(auc(roc_full_glm),auc(roc_transform_model_glm), auc(roc_transform_model_step_glm)), ncol = 3, nrow=1, byrow = T)
+colnames(auc.model)<-c("Full", "Transformed", "Step Transformed")
+rownames(auc.model)<- c("AUC")
+auc.model
+```
+
+
+#### AIC 
+
+All three models have very simliar AIC. Transformed and Transformed Step models have slightly better  AIC values. 
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+aic <- matrix(c(full.model.glm$aic,transform_model.glm$aic,transform_model_step.glm$aic), ncol = 3, nrow=1, byrow = T)
+colnames(aic)<-c("Full", "Transformed", "Transformed Step")
+rownames(aic)<- c("AIC")
+aic
+```
+
+#### Deviance
+
+Based on the ANOVA summary of the deviance we Transformed and Transformed Step models are slightly better than the full model.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+anova(full.model.glm, transform_model.glm, transform_model_step.glm)
+
+```
+
+We will choose the transform_model_step.glm model for predicting 'TARGET_FLAG1' because of its simplicity, fewer predictors, and slightly better AIC/Deviance over the other two models. 
+
+##### Models for predicting Target amount
+
+Based on the table below we see that all models with 'TARGET_FLAG1'  have higher Adjusted R-squared values. 
+Models with out TARGET_FLAG1 and excluding TARGET_FLAG1=0 observation have low Adjusted R-squared values, therefore doesnt explain the variablity in the data well. RMSE values for the models with TARGET_FLAG1 are also far better than models with out TARGET_FLAG1 suggesting models with TARGET_FLAG1 are better fits the data. We believe FullOnlyFlag1Step is better model for predicting TARGET_AMOUNT. We choose this model based on its simplcity and by examing the predicted target amount on the train data.  However, we are concerned about this model's low Adjusted R-squared value. 
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+ rsq <-c(summary(full.model)$adj.r.squared,summary(full.model.onlyFlag1)$adj.r.squared,
+summary(model.step)$adj.r.squared,summary(model.onlyFlga1.step)$adj.r.squared,
+  xModel$results$Rsquared, xModel_onlyFlag1$results$Rsquared)
+modelnames <- c('FullModel', 'FullOnlyFlag1', 'FullModelStep','FullOnlyFlag1Step','CrossValidation','CrossValidationFalg1' )
+names(rsq)<- modelnames
+rsq
+rmse <- c(sqrt(mean(full.model$residuals^2)),sqrt(mean(full.model.onlyFlag1$residuals^2)),
+sqrt(mean(model.step$residuals^2)),sqrt(mean(model.onlyFlga1.step$residuals^2)),
+ xModel$results$RMSE, xModel_onlyFlag1$results$RMSE)
+
+names(rmse)<- modelnames
+rmse
+```
+
+#Test the reduced model on evaluation data
+
+All three models have same prediction for 'TARGET_FLAG'. Different models predict different TARGET_AMT. 
+A better approach to predict 'TARGET_AMOUNT' would be to predict TARGET_FLAG and then run prediction on observation with TARGET_FLAG=1;these prediciton seems to be more realistic.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+test_clean$TARGET_AMT <- as.numeric(test_clean$TARGET_AMT)
+
+predicted <- predict(full.model.glm, newdata = test_clean, type="response")
+test_clean$TARGET_FLAG  <- as.factor(ifelse(predicted  > 0.5,1,0))
+
+test_clean$TARGET_FLAG_Full  <- as.factor(ifelse(predicted  > 0.5,1,0))
+
+preditcted <- predict(transform_model.glm, newdata = test_clean, type="response")
+test_clean$TARGET_FLAG_Transform_Model  <- ifelse(predicted  > 0.5,1,0)
+predicted <- predict(transform_model_step.glm, newdata = test_clean, type="response")
+test_clean$TARGET_FLAG_Transform_Model_Step  <- ifelse(predicted  > 0.5,1,0)
+
+
+test_clean$TARGET_AMT_Full <- predict(full.model, newdata = test_clean)
+test_clean$TARGET_AMT_Full_Flag1  <- predict(full.model.onlyFlag1, newdata = test_clean, type="response")
+test_clean$TARGET_AMT_Step  <- predict(model.step, newdata = test_clean, type="response")
+test_clean$TARGET_AMT_Step_Flag1  <- predict(model.onlyFlga1.step, newdata = test_clean, type="response")
+test_clean$TARGET_AMT_Xmodel  <- predict(xModel, newdata = test_clean)
+test_clean$TARGET_AMT_xModel_onlyFlag1  <- predict(xModel_onlyFlag1, newdata = test_clean)
+write.csv(test_clean,"Data.csv")
+```
+
+library(car)
+library(caTools)
+library(caret)
+library(corrplot)
+library(data.table)
+library(dplyr)
+library(geoR)
+library(ggplot2)
+library(grid)
+library(gridExtra)
+library(kableExtra)
+library(knitr)
+library(MASS)
+library(naniar)
+library(nortest)
+library(pROC)
+library(pscl)
+library(psych)
+library(reshape)
+library(PerformanceAnalytics)
+library(ROCR)
+library(testthat)
+library(UpSetR)
+require(leaps)
+train <- read.csv("https://raw.githubusercontent.com/jjohn81/DATA621_Assignment4/master/insurance_training.csv")
+test <- read.csv("https://raw.githubusercontent.com/jjohn81/DATA621_Assignment4/master/insurance-evaluation.csv")
+test_actual <- test
+
+summary(train)
+
+#remove "$"
+money = function(input) {
+  out = sub("\\$", "", input)
+  out = as.numeric(sub(",", "", out))
+  return(out)
+}
+
+# Remove " ", replace with "_"
+underscore = function(input) {
+  out = sub(" ", "_", input)
+  return(out)
+}
+
+
+
+train = as.tbl(train) %>% 
+  mutate_at(c("INCOME","HOME_VAL","BLUEBOOK","OLDCLAIM"),
+            money) %>% 
+  mutate_at(c("EDUCATION","JOB","CAR_TYPE","URBANICITY"),
+            underscore) %>% 
+  mutate_at(c("EDUCATION","JOB","CAR_TYPE","URBANICITY"),
+            as.factor) %>% 
+  mutate(TARGET_FLAG = as.factor(TARGET_FLAG))
+
+test = as.tbl(test) %>% 
+  mutate_at(c("INCOME","HOME_VAL","BLUEBOOK","OLDCLAIM"),
+            money) %>% 
+  mutate_at(c("EDUCATION","JOB","CAR_TYPE","URBANICITY"),
+            underscore) %>% 
+  mutate_at(c("EDUCATION","JOB","CAR_TYPE","URBANICITY"),
+            as.factor) %>% 
+  mutate(TARGET_FLAG = as.factor(TARGET_FLAG))
+
+
+train$AGE[is.na(train$AGE)] <- mean(train$AGE, na.rm=TRUE)
+train$YOJ[is.na(train$YOJ)] <- mean(train$YOJ, na.rm=TRUE)
+train$HOME_VAL[is.na(train$HOME_VAL)] <- median(train$HOME_VAL, na.rm=TRUE)
+train$CAR_AGE[is.na(train$CAR_AGE)] <- mean(train$CAR_AGE, na.rm=TRUE)
+train$INCOME[is.na(train$INCOME)] <- median(train$INCOME, na.rm=TRUE)
+train <- train[complete.cases(train),]
+train_clean <- train
+train_clean$INDEX <- NULL
+
+
+test$AGE[is.na(test$AGE)] <- mean(test$AGE, na.rm=TRUE)
+test$YOJ[is.na(test$YOJ)] <- mean(test$YOJ, na.rm=TRUE)
+test$HOME_VAL[is.na(test$HOME_VAL)] <- median(test$HOME_VAL, na.rm=TRUE)
+test$CAR_AGE[is.na(test$CAR_AGE)] <- mean(test$CAR_AGE, na.rm=TRUE)
+test$INCOME[is.na(test$INCOME)] <- median(test$INCOME, na.rm=TRUE)
+#test <- test[complete.cases(test),]
+test_clean <- test
+test_clean$INDEX <- NULL
+
+train_clean$INCOME <- as.numeric(train_clean$INCOME)
+train_clean$HOME_VAL <- as.numeric(train_clean$HOME_VAL)
+train_clean$BLUEBOOK <- as.numeric(train_clean$BLUEBOOK)
+train_clean$OLDCLAIM <- as.numeric(train_clean$OLDCLAIM)
+
+test_clean$INCOME <- as.numeric(test_clean$INCOME)
+test_clean$HOME_VAL <- as.numeric(test_clean$HOME_VAL)
+test_clean$BLUEBOOK <- as.numeric(test_clean$BLUEBOOK)
+test_clean$OLDCLAIM <- as.numeric(test_clean$OLDCLAIM)
+
+ntrain<-select_if(train_clean, is.numeric)
+ntrain <- ntrain[,c("INCOME","HOME_VAL","BLUEBOOK","OLDCLAIM")]
+ntrain <- as.data.frame((ntrain))
+
+par(mfrow=c(2, 2))
+colnames <- dimnames(ntrain)[[2]]
+
+for(col in 1:4) {
+    d <- density(na.omit(ntrain[,col]))
+    plot(d, type="n", main=colnames[col])
+    polygon(d, col="blue", border="gray")
+}
+  
+boxcoxfit(train_clean$INCOME[train_clean$INCOME >0])
+train_clean$INCOME_MOD <- train_clean$INCOME ^0.443
+boxcoxfit(train_clean$HOME_VAL[train_clean$HOME_VAL > 0])
+train_clean$HOME_VAL_MOD <- train_clean$HOME_VAL^0.102
+boxcoxfit(train_clean$BLUEBOOK)
+train_clean$BLUEBOOK_MOD <- train_clean$BLUEBOOK^0.461
+boxcoxfit(train_clean$OLDCLAIM[train_clean$OLDCLAIM>0])
+train_clean$OLD_CLAIM_MOD <- log(train_clean$OLDCLAIM + 1)   
+
+test_clean$INCOME_MOD <- test_clean$INCOME ^0.443
+test_clean$HOME_VAL_MOD <- test_clean$HOME_VAL^0.102
+test_clean$BLUEBOOK_MOD <- test_clean$BLUEBOOK^0.461
+test_clean$OLD_CLAIM_MOD <- log(test_clean$OLDCLAIM + 1)  
+
+pairs(~MVR_PTS+CLM_FREQ+URBANICITY+HOME_VAL+PARENT1+CAR_USE+OLDCLAIM, data=train_clean, main="Predictors with High Correlattions to Targets", col="slategrey")
+train_flag <- train[,-c(1)] 
+full.model.glm <- glm(TARGET_FLAG ~.-TARGET_AMT , data = train_flag, family = binomial(link='logit'))
+summary(full.model.glm)
+
+transform_model.glm <- glm(TARGET_FLAG ~.-TARGET_AMT, data = train_clean, family = binomial(link='logit'))
+summary(transform_model.glm)
+transform_model_step.glm <- step( transform_model.glm,trace = 0, keep = NULL)
+summary(transform_model_step.glm) 
+
+full.model <- lm(TARGET_AMT ~ .  , data = train_clean, na.action = na.exclude)
+summary(full.model)
+
+train1 <- train_clean[ which(train_clean$TARGET_FLAG==1),] 
+train1 <- train1[,-c(1)] 
+
+full.model.onlyFlag1 <- lm(TARGET_AMT ~ .  ,data= train1, na.action = na.exclude)
+
+summary(full.model.onlyFlag1)
+
+model.step <- step(full.model, trace = 0, keep = NULL)
+summary(model.step) 
+model.onlyFlga1.step <- step(full.model.onlyFlag1, trace = 0, keep = NULL)
+summary(model.onlyFlga1.step) 
+
+set.seed(123) 
+train.control <- trainControl(method = "cv", number = 10)
+# Train the model
+xModel <- train(TARGET_AMT ~., data = train_clean, method = "lm",
+               trControl = train.control)
+
+summary(xModel) 
+
+
+train1 <- train_clean[ which(train_clean$TARGET_FLAG==1),] 
+train1 <- train1[,-c(1)] 
+xModel_onlyFlag1 <- train(TARGET_AMT ~., data = train1, method = "lm",
+               trControl = train.control)
+
+summary(xModel_onlyFlag1) 
+
+par(mfrow=c(1, 3))
+train_flag$predict_full_glm <- ifelse(predict(full.model.glm, train_flag, type='response') > 0.5,1,0)
+roc_full_glm <- roc(train_flag$TARGET_FLAG, train_flag$predict_full_glm, plot=T, asp=NA,
+                legacy.axes=T, main = "ROC Full Model", col="red", levels=c(0,1))
+
+train_clean$transform_model_glm <- ifelse(predict(transform_model.glm, train_clean, type='response') > 0.5,1,0)
+
+roc_transform_model_glm <- roc(train_clean$TARGET_FLAG, train_clean$transform_model_glm, plot=T, asp=NA,
+                legacy.axes=T, main = "ROC Transformed", col="red" ,levels=c(0,1))
+
+train_clean$transform_model_step_glm <-  ifelse(predict(transform_model_step.glm, train_clean, type='response') > 0.5,1,0)
+
+roc_transform_model_step_glm <- roc(train_clean$TARGET_FLAG, train_clean$transform_model_step_glm, plot=T, asp=NA,
+                legacy.axes=T, main = "ROC Step Wise", col="red", levels=c(0,1))
+
+confusionMatrix(table(train_flag$TARGET_FLAG, train_flag$predict_full_glm))$byClass
+confusionMatrix(table(train_clean$TARGET_FLAG, train_clean$transform_model_glm))$byClass
+confusionMatrix(table(train_clean$TARGET_FLAG, train_clean$transform_model_step_glm))$byClass
+
+auc.model <- matrix(c(auc(roc_full_glm),auc(roc_transform_model_glm), auc(roc_transform_model_step_glm)), ncol = 3, nrow=1, byrow = T)
+colnames(auc.model)<-c("Full", "Transformed", "Step Transformed")
+rownames(auc.model)<- c("AUC")
+auc.model
+
+aic <- matrix(c(full.model.glm$aic,transform_model.glm$aic,transform_model_step.glm$aic), ncol = 3, nrow=1, byrow = T)
+colnames(aic)<-c("Full", "Transformed", "Transformed Step")
+rownames(aic)<- c("AIC")
+aic
+
+anova(full.model.glm, transform_model.glm, transform_model_step.glm)
+
+ rsq <-c(summary(full.model)$adj.r.squared,summary(full.model.onlyFlag1)$adj.r.squared,
+summary(model.step)$adj.r.squared,summary(model.onlyFlga1.step)$adj.r.squared,
+  xModel$results$Rsquared, xModel_onlyFlag1$results$Rsquared)
+modelnames <- c('FullModel', 'FullOnlyFlag1', 'FullModelStep','FullOnlyFlag1Step','CrossValidation','CrossValidationFalg1' )
+names(rsq)<- modelnames
+rsq
+rmse <- c(sqrt(mean(full.model$residuals^2)),sqrt(mean(full.model.onlyFlag1$residuals^2)),
+sqrt(mean(model.step$residuals^2)),sqrt(mean(model.onlyFlga1.step$residuals^2)),
+ xModel$results$RMSE, xModel_onlyFlag1$results$RMSE)
+
+names(rmse)<- modelnames
+rmse
+
+test_clean$TARGET_AMT <- as.numeric(test_clean$TARGET_AMT)
+
+predicted <- predict(full.model.glm, newdata = test_clean, type="response")
+test_clean$TARGET_FLAG  <- as.factor(ifelse(predicted  > 0.5,1,0))
+
+test_clean$TARGET_FLAG_Full  <- as.factor(ifelse(predicted  > 0.5,1,0))
+
+preditcted <- predict(transform_model.glm, newdata = test_clean, type="response")
+test_clean$TARGET_FLAG_Transform_Model  <- ifelse(predicted  > 0.5,1,0)
+predicted <- predict(transform_model_step.glm, newdata = test_clean, type="response")
+test_clean$TARGET_FLAG_Transform_Model_Step  <- ifelse(predicted  > 0.5,1,0)
+
+
+test_clean$TARGET_AMT_Full <- predict(full.model, newdata = test_clean)
+test_clean$TARGET_AMT_Full_Flag1  <- predict(full.model.onlyFlag1, newdata = test_clean, type="response")
+test_clean$TARGET_AMT_Step  <- predict(model.step, newdata = test_clean, type="response")
+test_clean$TARGET_AMT_Step_Flag1  <- predict(model.onlyFlga1.step, newdata = test_clean, type="response")
+test_clean$TARGET_AMT_Xmodel  <- predict(xModel, newdata = test_clean)
+test_clean$TARGET_AMT_xModel_onlyFlag1  <- predict(xModel_onlyFlag1, newdata = test_clean)
+write.csv(test_clean,"Data.csv")
+
+
+
+
+
